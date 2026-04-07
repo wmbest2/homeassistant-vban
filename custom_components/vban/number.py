@@ -1,11 +1,11 @@
 """Number platform for VBAN VoiceMeeter."""
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .switch import VBANBaseEntity
+from .entity import VBANBaseEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -33,9 +33,12 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
 
     def __init__(self, remote, kind, index):
         super().__init__(remote, kind, index)
-        label = self.obj.label or f"%s %s" % (kind.capitalize(), index + 1)
-        self._attr_name = f"%s Gain" % label
         self._attr_unique_id = f"%s_%s_%s_gain" % (remote.device.address, kind, index)
+
+    @property
+    def name(self):
+        label = self.obj.label or f"%s %s" % (self.kind.capitalize(), self.index + 1)
+        return f"%s Gain" % label
 
     @property
     def native_value(self):

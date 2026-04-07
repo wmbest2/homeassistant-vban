@@ -1,10 +1,11 @@
 """Switch platform for VBAN VoiceMeeter."""
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .entity import VBANBaseEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -19,53 +20,26 @@ async def async_setup_entry(
     for strip in remote.strips:
         entities.append(VBANMuteSwitch(remote, "strip", strip.index))
         entities.append(VBANSoloSwitch(remote, strip.index))
+        # Add routing switches for strips
+        for bus_id in ["A1", "A2", "A3", "B1", "B2", "B3"]:
+            entities.append(VBANRoutingSwitch(remote, strip.index, bus_id))
+            
     for bus in remote.buses:
         entities.append(VBANMuteSwitch(remote, "bus", bus.index))
 
     async_add_entities(entities)
-
-class VBANBaseEntity:
-    """Common properties for VBAN entities."""
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-
-    def __init__(self, remote, kind, index):
-        self.remote = remote
-        self.kind = kind
-        self.index = index
-
-    @property
-    def available(self) -> bool:
-        return self.remote.online
-
-    @property
-    def obj(self):
-        if self.kind == "strip":
-            return self.remote._all_strips[self.index]
-        return self.remote._all_buses[self.index]
-
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks."""
-        self.remote.add_callback(self._handle_coordinator_update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister callbacks."""
-        self.remote.remove_callback(self._handle_coordinator_update)
-
-    @callback
-    def _handle_coordinator_update(self, remote) -> None:
-        """Update the entity state."""
-        self.async_write_ha_state()
 
 class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     """Mute switch for VBAN."""
 
     def __init__(self, remote, kind, index):
         super().__init__(remote, kind, index)
-        # Use the actual label if available, otherwise generic name
-        label = self.obj.label or f"%s %s" % (kind.capitalize(), index + 1)
-        self._attr_name = f"%s Mute" % label
         self._attr_unique_id = f"%s_%s_%s_mute" % (remote.device.address, kind, index)
+
+    @property
+    def name(self):
+        label = self.obj.label or f"%s %s" % (self.kind.capitalize(), self.index + 1)
+        return f"%s Mute" % label
 
     @property
     def is_on(self):
@@ -82,9 +56,12 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
 
     def __init__(self, remote, index):
         super().__init__(remote, "strip", index)
-        label = self.obj.label or f"Strip %s" % (index + 1)
-        self._attr_name = f"%s Solo" % label
         self._attr_unique_id = f"%s_strip_%s_solo" % (remote.device.address, index)
+
+    @property
+    def name(self):
+        label = self.obj.label or f"Strip %s" % (self.index + 1)
+        return f"%s Solo" % label
 
     @property
     def is_on(self):
@@ -95,3 +72,26 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs):
         await self.obj.set_solo(False)
+
+class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
+    """Routing switch for VBAN."""
+
+    def __init__(self, remote, index, bus_id):
+        super().__init__(remote, "strip", index)
+        self.bus_id = bus_id.lower()
+        self._attr_unique_id = f"%s_strip_%s_route_%s" % (remote.device.address, index, self.bus_id)
+
+    @property
+    def name(self):
+        label = self.obj.label or f"Strip %s" % (self.index + 1)
+        return f"%s Route %s" % (label, self.bus_id.upper())
+
+    @property
+    def is_on(self):
+        return getattr(self.obj, self.bus_id)
+
+    async def async_turn_on(self, **kwargs):
+        await self.obj.set_bus_routing(self.bus_id, True)
+
+    async def async_turn_off(self, **kwargs):
+        await self.obj.set_bus_routing(self.bus_id, False)
