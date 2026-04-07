@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import entity_platform, entity_registry as er
+from homeassistant.helpers import entity_platform, entity_registry as er, device_registry as dr
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.service import async_extract_referenced_entity_ids
 
@@ -79,22 +79,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def get_remotes_for_call(call: ServiceCall):
         """Extract remotes targeted by the service call."""
+        # Using service.async_extract_referenced_entity_ids helper
         referenced = async_extract_referenced_entity_ids(hass, call)
-        all_ids = referenced.referenced | referenced.indirectly_referenced
         
-        if not all_ids:
-            # If no target specified, return all remotes (legacy behavior or broad broadcast)
-            return vban_data.remotes.values()
-            
-        registry = er.async_get(hass)
         target_remotes = set()
         
-        for entity_id in all_ids:
-            ent_entry = registry.async_get(entity_id)
-            if ent_entry and ent_entry.platform == DOMAIN:
-                if ent_entry.config_entry_id in vban_data.remotes:
-                    target_remotes.add(vban_data.remotes[ent_entry.config_entry_id])
+        # 1. Check direct device_ids
+        if call.data.get("device_id"):
+            dev_reg = dr.async_get(hass)
+            device_ids = call.data.get("device_id")
+            if isinstance(device_ids, str):
+                device_ids = [device_ids]
+            for d_id in device_ids:
+                d_entry = dev_reg.async_get(d_id)
+                if d_entry:
+                    for config_id in d_entry.config_entries:
+                        if config_id in vban_data.remotes:
+                            target_remotes.add(vban_data.remotes[config_id])
+
+        # 2. Check entity_ids (includes those from area_id)
+        all_ids = referenced.referenced | referenced.indirectly_referenced
+        if all_ids:
+            ent_reg = er.async_get(hass)
+            for entity_id in all_ids:
+                ent_entry = ent_reg.async_get(entity_id)
+                if ent_entry and ent_entry.platform == DOMAIN:
+                    if ent_entry.config_entry_id in vban_data.remotes:
+                        target_remotes.add(vban_data.remotes[ent_entry.config_entry_id])
         
+        # If nothing specifically targeted, return nothing (safety)
         return target_remotes
 
     async def handle_send_raw_command(call: ServiceCall):
@@ -103,45 +116,56 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for r in targets:
             await r.send_command(command)
 
+    async def get_objs_for_call(call: ServiceCall):
+        """Extract specific strip/bus objects targeted by entity_id."""
+        referenced = async_extract_referenced_entity_ids(hass, call)
+        all_ids = referenced.referenced | referenced.indirectly_referenced
+        
+        target_objs = []
+        ent_reg = er.async_get(hass)
+        for entity_id in all_ids:
+            ent_entry = ent_reg.async_get(entity_id)
+            if ent_entry and ent_entry.platform == DOMAIN:
+                remote = vban_data.remotes.get(ent_entry.config_entry_id)
+                if not remote: continue
+                
+                # Extract index and kind from unique_id: host_kind_index_type
+                parts = ent_entry.unique_id.split("_")
+                if len(parts) >= 3:
+                    kind = parts[1]
+                    index = int(parts[2])
+                    obj = remote._all_strips[index] if kind == "strip" else remote._all_buses[index]
+                    target_objs.append(obj)
+        return target_objs
+
     async def handle_set_gain(call: ServiceCall):
-        kind, index, gain = call.data.get("kind"), call.data.get("index"), call.data.get("gain")
-        targets = await get_remotes_for_call(call)
-        for r in targets:
-            if index < len(r.strips if kind == "strip" else r.buses):
-                obj = r.strips[index] if kind == "strip" else r.buses[index]
-                await obj.set_gain(gain)
+        gain = call.data.get("gain")
+        objs = await get_objs_for_call(call)
+        for obj in objs:
+            await obj.set_gain(gain)
 
     async def handle_set_mute(call: ServiceCall):
-        kind, index, mute = call.data.get("kind"), call.data.get("index"), call.data.get("mute")
-        targets = await get_remotes_for_call(call)
-        for r in targets:
-            if index < len(r.strips if kind == "strip" else r.buses):
-                obj = r.strips[index] if kind == "strip" else r.buses[index]
-                await obj.set_mute(mute)
+        mute = call.data.get("mute")
+        objs = await get_objs_for_call(call)
+        for obj in objs:
+            await obj.set_mute(mute)
 
     if not hass.services.has_service(DOMAIN, "send_raw_command"):
-        hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command, schema=vol.Schema({
-            vol.Required("command"): str,
+        # device_id is a string or list of strings
+        TARGET_SCHEMA = vol.Schema({
             vol.Optional("entity_id"): cv.entity_ids,
-            vol.Optional("device_id"): cv.string,
-            vol.Optional("area_id"): cv.string,
-        }))
-        hass.services.async_register(DOMAIN, "set_gain", handle_set_gain, schema=vol.Schema({
-            vol.Required("kind"): vol.In(["strip", "bus"]),
-            vol.Required("index"): cv.positive_int,
-            vol.Required("gain"): vol.Coerce(float),
-            vol.Optional("entity_id"): cv.entity_ids,
-            vol.Optional("device_id"): cv.string,
-            vol.Optional("area_id"): cv.string,
-        }))
-        hass.services.async_register(DOMAIN, "set_mute", handle_set_mute, schema=vol.Schema({
-            vol.Required("kind"): vol.In(["strip", "bus"]),
-            vol.Required("index"): cv.positive_int,
-            vol.Required("mute"): bool,
-            vol.Optional("entity_id"): cv.entity_ids,
-            vol.Optional("device_id"): cv.string,
-            vol.Optional("area_id"): cv.string,
-        }))
+            vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
+            vol.Optional("area_id"): vol.All(cv.ensure_list, [cv.string]),
+        }, extra=vol.ALLOW_EXTRA)
+
+        hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command, 
+            schema=vol.Schema({vol.Required("command"): str}).extend(TARGET_SCHEMA.schema))
+            
+        hass.services.async_register(DOMAIN, "set_gain", handle_set_gain, 
+            schema=vol.Schema({vol.Required("gain"): vol.Coerce(float)}).extend(TARGET_SCHEMA.schema))
+            
+        hass.services.async_register(DOMAIN, "set_mute", handle_set_mute, 
+            schema=vol.Schema({vol.Required("mute"): bool}).extend(TARGET_SCHEMA.schema))
 
     return True
 
