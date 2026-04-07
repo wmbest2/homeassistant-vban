@@ -2,6 +2,7 @@
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.core import callback
 
+from aiovban.enums import VoicemeeterType
 from .const import DOMAIN
 
 class VBANBaseEntity(Entity):
@@ -30,6 +31,18 @@ class VBANBaseEntity(Entity):
         if self.kind == "strip":
             return self.remote._all_strips[self.index]
         return self.remote._all_buses[self.index]
+
+    @property
+    def identifier(self) -> str:
+        """Return a stable identifier like Strip 1 or A1."""
+        if self.kind == "strip":
+            return f"Strip %s" % (self.index + 1)
+        
+        v_type = self.remote.type or VoicemeeterType.POTATO
+        phys_limit = 2 if v_type == VoicemeeterType.VOICEMEETER else 3 if v_type == VoicemeeterType.BANANA else 5
+        if self.index < phys_limit:
+            return f"A%s" % (self.index + 1)
+        return f"B%s" % (self.index - phys_limit + 1)
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
