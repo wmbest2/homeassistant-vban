@@ -79,7 +79,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def get_remotes_for_call(call: ServiceCall):
         """Extract remotes targeted by the service call."""
-        referenced = async_extract_referenced_entity_ids(hass, call)
+        # Fix: Pass call.data, not the ServiceCall object
+        referenced = async_extract_referenced_entity_ids(hass, call.data)
         target_remotes = set()
         
         # 1. Check direct device_ids (from service target selector)
@@ -118,7 +119,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def get_objs_for_call(call: ServiceCall):
         """Extract specific strip/bus objects targeted by entity_id."""
-        referenced = async_extract_referenced_entity_ids(hass, call)
+        # Fix: Pass call.data, not the ServiceCall object
+        referenced = async_extract_referenced_entity_ids(hass, call.data)
         all_ids = referenced.referenced | referenced.indirectly_referenced
         
         target_objs = []
@@ -156,7 +158,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await obj.set_mute(mute)
 
     if not hass.services.has_service(DOMAIN, "send_raw_command"):
-        # Explicit schemas without extend to avoid potential side effects
         hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command, 
             schema=vol.Schema({
                 vol.Required("command"): str,
