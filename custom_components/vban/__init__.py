@@ -6,7 +6,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import entity_platform
 
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
 
@@ -52,11 +51,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     async def handle_send_raw_command(call: ServiceCall):
-        """Handle the service call."""
         command = call.data.get("command")
         await remote.send_command(command)
 
+    async def handle_set_gain(call: ServiceCall):
+        kind = call.data.get("kind")
+        index = call.data.get("index")
+        gain = call.data.get("gain")
+        obj = remote.strips[index] if kind == "strip" else remote.buses[index]
+        await obj.set_gain(gain)
+
+    async def handle_set_mute(call: ServiceCall):
+        kind = call.data.get("kind")
+        index = call.data.get("index")
+        mute = call.data.get("mute")
+        obj = remote.strips[index] if kind == "strip" else remote.buses[index]
+        await obj.set_mute(mute)
+
     hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command)
+    hass.services.async_register(DOMAIN, "set_gain", handle_set_gain)
+    hass.services.async_register(DOMAIN, "set_mute", handle_set_mute)
 
     return True
 
