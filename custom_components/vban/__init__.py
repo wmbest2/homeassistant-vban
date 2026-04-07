@@ -79,15 +79,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def get_remotes_for_call(call: ServiceCall):
         """Extract remotes targeted by the service call."""
-        # Using service.async_extract_referenced_entity_ids helper
         referenced = async_extract_referenced_entity_ids(hass, call)
-        
         target_remotes = set()
         
-        # 1. Check direct device_ids
-        if call.data.get("device_id"):
+        # 1. Check direct device_ids (from service target selector)
+        if "device_id" in call.data and call.data["device_id"]:
             dev_reg = dr.async_get(hass)
-            device_ids = call.data.get("device_id")
+            device_ids = call.data["device_id"]
             if isinstance(device_ids, str):
                 device_ids = [device_ids]
             for d_id in device_ids:
@@ -107,12 +105,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if ent_entry.config_entry_id in vban_data.remotes:
                         target_remotes.add(vban_data.remotes[ent_entry.config_entry_id])
         
-        # If nothing specifically targeted, return nothing (safety)
         return target_remotes
 
     async def handle_send_raw_command(call: ServiceCall):
         command = call.data.get("command")
         targets = await get_remotes_for_call(call)
+        if not targets:
+            _LOGGER.warning("No VoiceMeeter devices targeted for send_raw_command")
+            return
         for r in targets:
             await r.send_command(command)
 
@@ -129,7 +129,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 remote = vban_data.remotes.get(ent_entry.config_entry_id)
                 if not remote: continue
                 
-                # Extract index and kind from unique_id: host_kind_index_type
                 parts = ent_entry.unique_id.split("_")
                 if len(parts) >= 3:
                     kind = parts[1]
@@ -141,31 +140,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_set_gain(call: ServiceCall):
         gain = call.data.get("gain")
         objs = await get_objs_for_call(call)
+        if not objs:
+            _LOGGER.warning("No VoiceMeeter entities targeted for set_gain")
+            return
         for obj in objs:
             await obj.set_gain(gain)
 
     async def handle_set_mute(call: ServiceCall):
         mute = call.data.get("mute")
         objs = await get_objs_for_call(call)
+        if not objs:
+            _LOGGER.warning("No VoiceMeeter entities targeted for set_mute")
+            return
         for obj in objs:
             await obj.set_mute(mute)
 
     if not hass.services.has_service(DOMAIN, "send_raw_command"):
-        # device_id is a string or list of strings
-        TARGET_SCHEMA = vol.Schema({
+        # Make all target fields truly optional in schema to avoid None errors
+        BASE_SCHEMA = vol.Schema({
             vol.Optional("entity_id"): cv.entity_ids,
             vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
             vol.Optional("area_id"): vol.All(cv.ensure_list, [cv.string]),
-        }, extra=vol.ALLOW_EXTRA)
+        })
 
         hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command, 
-            schema=vol.Schema({vol.Required("command"): str}).extend(TARGET_SCHEMA.schema))
+            schema=BASE_SCHEMA.extend({vol.Required("command"): str}))
             
         hass.services.async_register(DOMAIN, "set_gain", handle_set_gain, 
-            schema=vol.Schema({vol.Required("gain"): vol.Coerce(float)}).extend(TARGET_SCHEMA.schema))
+            schema=BASE_SCHEMA.extend({vol.Required("gain"): vol.Coerce(float)}))
             
         hass.services.async_register(DOMAIN, "set_mute", handle_set_mute, 
-            schema=vol.Schema({vol.Required("mute"): bool}).extend(TARGET_SCHEMA.schema))
+            schema=BASE_SCHEMA.extend({vol.Required("mute"): bool}))
 
     return True
 
