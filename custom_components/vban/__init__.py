@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_platform, entity_registry as er, device_registry as dr
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.service import async_extract_referenced_entity_ids
+from homeassistant.helpers.target import async_extract_referenced_entity_ids
 
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
 
@@ -156,7 +156,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await obj.set_mute(mute)
 
     if not hass.services.has_service(DOMAIN, "send_raw_command"):
-        # Make all target fields truly optional in schema to avoid None errors
         BASE_SCHEMA = vol.Schema({
             vol.Optional("entity_id"): cv.entity_ids,
             vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
