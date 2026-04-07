@@ -4,7 +4,7 @@ send_raw_command:
   fields:
     command:
       name: Command
-      description: The raw command string (e.g. Strip[0].Mute=1;)
+      description: "The raw command string (e.g. Strip[0].Mute=1;)"
       required: true
       example: "Strip[0].Mute=1;"
 
@@ -14,17 +14,17 @@ set_gain:
   fields:
     kind:
       name: Kind
-      description: "strip" or "bus"
+      description: "Whether to target a strip or a bus"
       required: true
       example: "strip"
     index:
       name: Index
-      description: 0-indexed strip or bus number
+      description: "0-indexed strip or bus number"
       required: true
       example: 0
     gain:
       name: Gain
-      description: Gain in dB (-60.0 to 12.0)
+      description: "Gain in dB (-60.0 to 12.0)"
       required: true
       example: -10.5
 
@@ -34,16 +34,16 @@ set_mute:
   fields:
     kind:
       name: Kind
-      description: "strip" or "bus"
+      description: "Whether to target a strip or a bus"
       required: true
       example: "strip"
     index:
       name: Index
-      description: 0-indexed strip or bus number
+      description: "0-indexed strip or bus number"
       required: true
       example: 0
     mute:
       name: Mute
-      description: True to mute, False to unmute
+      description: "True to mute, False to unmute"
       required: true
       example: true
