@@ -34,14 +34,13 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     def __init__(self, remote, kind, index):
         super().__init__(remote, kind, index)
         self._attr_unique_id = f"%s_%s_%s_mute" % (remote.device.address, kind, index)
+        # Keep generic ID but clean up display name
         self._attr_suggested_object_id = f"%s_%s_mute" % (kind, index + 1)
 
     @property
     def name(self):
-        label = self.obj.label
-        ident = self.identifier
-        display = f"(%s) %s" % (ident, label) if label else ident
-        return f"%s Mute" % display
+        label = self.obj.label or f"%s %s" % (self.kind.capitalize(), self.index + 1)
+        return f"%s Mute" % label
 
     @property
     def is_on(self):
@@ -63,10 +62,8 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
 
     @property
     def name(self):
-        label = self.obj.label
-        ident = self.identifier
-        display = f"(%s) %s" % (ident, label) if label else ident
-        return f"%s Solo" % display
+        label = self.obj.label or f"Strip %s" % (self.index + 1)
+        return f"%s Solo" % label
 
     @property
     def is_on(self):
@@ -89,10 +86,8 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
 
     @property
     def name(self):
-        label = self.obj.label
-        ident = self.identifier
-        display = f"(%s) %s" % (ident, label) if label else ident
-        return f"%s Route %s" % (display, self.bus_id.upper())
+        label = self.obj.label or f"Strip %s" % (self.index + 1)
+        return f"%s -> %s" % (label, self.bus_id.upper())
 
     @property
     def is_on(self):

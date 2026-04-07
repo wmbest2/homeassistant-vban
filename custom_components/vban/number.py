@@ -38,10 +38,8 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
 
     @property
     def name(self):
-        label = self.obj.label
-        ident = self.identifier
-        display = f"(%s) %s" % (ident, label) if label else ident
-        return f"%s Gain" % display
+        label = self.obj.label or f"%s %s" % (self.kind.capitalize(), self.index + 1)
+        return f"%s Gain" % label
 
     @property
     def native_value(self):
