@@ -1,6 +1,9 @@
 send_raw_command:
   name: Send raw command
-  description: Sends a raw text command to VoiceMeeter via VBAN
+  description: Sends a raw text command to the targeted VoiceMeeter device
+  target:
+    entity:
+      integration: vban
   fields:
     command:
       name: Command
@@ -10,18 +13,14 @@ send_raw_command:
 
 set_gain:
   name: Set gain
-  description: Set gain for a strip or bus
+  description: Set gain for a specific strip or bus entity
+  target:
+    entity:
+      integration: vban
+      domain:
+        - number
+        - switch
   fields:
-    kind:
-      name: Kind
-      description: strip or bus
-      required: true
-      example: "strip"
-    index:
-      name: Index
-      description: 0-indexed strip or bus number
-      required: true
-      example: 0
     gain:
       name: Gain
       description: Gain in dB
@@ -30,18 +29,14 @@ set_gain:
 
 set_mute:
   name: Set mute
-  description: Set mute state for a strip or bus
+  description: Set mute state for a specific strip or bus entity
+  target:
+    entity:
+      integration: vban
+      domain:
+        - switch
+        - number
   fields:
-    kind:
-      name: Kind
-      description: strip or bus
-      required: true
-      example: "strip"
-    index:
-      name: Index
-      description: 0-indexed strip or bus number
-      required: true
-      example: 0
     mute:
       name: Mute
       description: True to mute False to unmute

@@ -16,7 +16,7 @@ class VBANBaseEntity(Entity):
         self.index = index
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, remote.device.address)},
-            name=f"VoiceMeeter (%s)" % remote.device.address,
+            name=f"VoiceMeeter ({remote.device.address})",
             manufacturer="VB-Audio",
             model=remote.type.name if remote.type else "VoiceMeeter",
             sw_version=remote.version,
@@ -36,13 +36,13 @@ class VBANBaseEntity(Entity):
     def identifier(self) -> str:
         """Return a stable identifier like Strip 1 or A1."""
         if self.kind == "strip":
-            return f"Strip %s" % (self.index + 1)
+            return f"Strip {self.index + 1}"
         
         v_type = self.remote.type or VoicemeeterType.POTATO
         phys_limit = 2 if v_type == VoicemeeterType.VOICEMEETER else 3 if v_type == VoicemeeterType.BANANA else 5
         if self.index < phys_limit:
-            return f"A%s" % (self.index + 1)
-        return f"B%s" % (self.index - phys_limit + 1)
+            return f"A{self.index + 1}"
+        return f"B{self.index - phys_limit + 1}"
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
@@ -56,3 +56,15 @@ class VBANBaseEntity(Entity):
     def _handle_coordinator_update(self, remote, body) -> None:
         """Update the entity state."""
         self.async_write_ha_state()
+
+    async def async_send_raw_command(self, command: str):
+        """Service: send raw command."""
+        await self.remote.send_command(command)
+
+    async def async_set_gain(self, gain: float):
+        """Service: set gain."""
+        await self.obj.set_gain(gain)
+
+    async def async_set_mute(self, mute: bool):
+        """Service: set mute."""
+        await self.obj.set_mute(mute)
