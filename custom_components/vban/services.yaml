@@ -1,0 +1,9 @@
+send_raw_command:
+  name: Send raw command
+  description: Sends a raw text command to VoiceMeeter via VBAN.
+  fields:
+    command:
+      name: Command
+      description: The raw command string (e.g. Strip[0].Mute=1;)
+      required: true
+      example: "Strip[0].Mute=1;"
