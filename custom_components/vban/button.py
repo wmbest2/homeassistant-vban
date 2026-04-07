@@ -13,8 +13,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VBAN buttons."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    remote = data["remote"]
+    vban_data = hass.data[DOMAIN]
+    remote = vban_data.remotes[entry.entry_id]
 
     async_add_entities([
         VBANRestartButton(remote),
@@ -30,7 +30,7 @@ class VBANBaseButton(ButtonEntity):
         self.remote = remote
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, remote.device.address)},
-            name=f"VoiceMeeter (%s)" % remote.device.address,
+            name=f"VoiceMeeter ({remote.device.address})",
             manufacturer="VB-Audio",
             model=remote.type.name if remote.type else "VoiceMeeter",
             sw_version=remote.version,
@@ -57,7 +57,7 @@ class VBANRestartButton(VBANBaseButton):
 
     def __init__(self, remote):
         super().__init__(remote)
-        self._attr_unique_id = f"%s_restart_engine" % remote.device.address
+        self._attr_unique_id = f"{remote.device.address}_restart_engine"
 
     async def async_press(self) -> None:
         await self.remote.restart()
@@ -70,7 +70,7 @@ class VBANShowWindowButton(VBANBaseButton):
 
     def __init__(self, remote):
         super().__init__(remote)
-        self._attr_unique_id = f"%s_show_window" % remote.device.address
+        self._attr_unique_id = f"{remote.device.address}_show_window"
 
     async def async_press(self) -> None:
         await self.remote.show()

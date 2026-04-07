@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import entity_platform
+import homeassistant.helpers.config_validation as cv
 
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
 
@@ -73,24 +73,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register entity-based services
-    platform = entity_platform.async_get_current_platform()
-    
-    platform.async_register_entity_service(
-        "send_raw_command",
-        {vol.Required("command"): str},
-        "async_send_raw_command",
-    )
-    platform.async_register_entity_service(
-        "set_gain",
-        {vol.Required("gain"): vol.Coerce(float)},
-        "async_set_gain",
-    )
-    platform.async_register_entity_service(
-        "set_mute",
-        {vol.Required("mute"): bool},
-        "async_set_mute",
-    )
+    # Register services
+    # For now, we use the first available remote if multiple are present
+    # Better implementation would use entity targets, but this fixes the immediate crash
+    async def handle_send_raw_command(call: ServiceCall):
+        command = call.data.get("command")
+        # Find the best remote to use (or use all if target not specific)
+        for r in vban_data.remotes.values():
+            await r.send_command(command)
+
+    async def handle_set_gain(call: ServiceCall):
+        kind, index, gain = call.data.get("kind"), call.data.get("index"), call.data.get("gain")
+        for r in vban_data.remotes.values():
+            if index < len(r.strips if kind == "strip" else r.buses):
+                obj = r.strips[index] if kind == "strip" else r.buses[index]
+                await obj.set_gain(gain)
+
+    async def handle_set_mute(call: ServiceCall):
+        kind, index, mute = call.data.get("kind"), call.data.get("index"), call.data.get("mute")
+        for r in vban_data.remotes.values():
+            if index < len(r.strips if kind == "strip" else r.buses):
+                obj = r.strips[index] if kind == "strip" else r.buses[index]
+                await obj.set_mute(mute)
+
+    if not hass.services.has_service(DOMAIN, "send_raw_command"):
+        hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command, schema=vol.Schema({vol.Required("command"): str}))
+        hass.services.async_register(DOMAIN, "set_gain", handle_set_gain, schema=vol.Schema({
+            vol.Required("kind"): vol.In(["strip", "bus"]),
+            vol.Required("index"): cv.positive_int,
+            vol.Required("gain"): vol.Coerce(float),
+        }))
+        hass.services.async_register(DOMAIN, "set_mute", handle_set_mute, schema=vol.Schema({
+            vol.Required("kind"): vol.In(["strip", "bus"]),
+            vol.Required("index"): cv.positive_int,
+            vol.Required("mute"): bool,
+        }))
 
     return True
 

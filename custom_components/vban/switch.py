@@ -13,8 +13,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VBAN switches."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    remote = data["remote"]
+    vban_data = hass.data[DOMAIN]
+    remote = vban_data.remotes[entry.entry_id]
 
     entities = []
     for strip in remote.strips:
@@ -33,14 +33,13 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
 
     def __init__(self, remote, kind, index):
         super().__init__(remote, kind, index)
-        self._attr_unique_id = f"%s_%s_%s_mute" % (remote.device.address, kind, index)
-        # Keep generic ID but clean up display name
-        self._attr_suggested_object_id = f"%s_%s_mute" % (kind, index + 1)
+        self._attr_unique_id = f"{remote.device.address}_{kind}_{index}_mute"
+        self._attr_suggested_object_id = f"{kind}_{index + 1}_mute"
 
     @property
     def name(self):
-        label = self.obj.label or f"%s %s" % (self.kind.capitalize(), self.index + 1)
-        return f"%s Mute" % label
+        label = self.obj.label or f"{self.kind.capitalize()} {self.index + 1}"
+        return f"{label} Mute"
 
     @property
     def is_on(self):
@@ -57,13 +56,13 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
 
     def __init__(self, remote, index):
         super().__init__(remote, "strip", index)
-        self._attr_unique_id = f"%s_strip_%s_solo" % (remote.device.address, index)
-        self._attr_suggested_object_id = f"strip_%s_solo" % (index + 1)
+        self._attr_unique_id = f"{remote.device.address}_strip_{index}_solo"
+        self._attr_suggested_object_id = f"strip_{index + 1}_solo"
 
     @property
     def name(self):
-        label = self.obj.label or f"Strip %s" % (self.index + 1)
-        return f"%s Solo" % label
+        label = self.obj.label or f"Strip {self.index + 1}"
+        return f"{label} Solo"
 
     @property
     def is_on(self):
@@ -81,13 +80,13 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
     def __init__(self, remote, index, bus_id):
         super().__init__(remote, "strip", index)
         self.bus_id = bus_id.lower()
-        self._attr_unique_id = f"%s_strip_%s_route_%s" % (remote.device.address, index, self.bus_id)
-        self._attr_suggested_object_id = f"strip_%s_route_%s" % (index + 1, self.bus_id)
+        self._attr_unique_id = f"{remote.device.address}_strip_{index}_route_{self.bus_id}"
+        self._attr_suggested_object_id = f"strip_{index + 1}_route_{self.bus_id}"
 
     @property
     def name(self):
-        label = self.obj.label or f"Strip %s" % (self.index + 1)
-        return f"%s -> %s" % (label, self.bus_id.upper())
+        label = self.obj.label or f"Strip {self.index + 1}"
+        return f"{label} -> {self.bus_id.upper()}"
 
     @property
     def is_on(self):
