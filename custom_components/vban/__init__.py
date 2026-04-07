@@ -156,20 +156,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await obj.set_mute(mute)
 
     if not hass.services.has_service(DOMAIN, "send_raw_command"):
-        BASE_SCHEMA = vol.Schema({
-            vol.Optional("entity_id"): cv.entity_ids,
-            vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
-            vol.Optional("area_id"): vol.All(cv.ensure_list, [cv.string]),
-        })
-
+        # Explicit schemas without extend to avoid potential side effects
         hass.services.async_register(DOMAIN, "send_raw_command", handle_send_raw_command, 
-            schema=BASE_SCHEMA.extend({vol.Required("command"): str}))
+            schema=vol.Schema({
+                vol.Required("command"): str,
+                vol.Optional("entity_id"): cv.entity_ids,
+                vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional("area_id"): vol.All(cv.ensure_list, [cv.string]),
+            }))
             
         hass.services.async_register(DOMAIN, "set_gain", handle_set_gain, 
-            schema=BASE_SCHEMA.extend({vol.Required("gain"): vol.Coerce(float)}))
+            schema=vol.Schema({
+                vol.Required("gain"): vol.Coerce(float),
+                vol.Optional("entity_id"): cv.entity_ids,
+                vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional("area_id"): vol.All(cv.ensure_list, [cv.string]),
+            }))
             
         hass.services.async_register(DOMAIN, "set_mute", handle_set_mute, 
-            schema=BASE_SCHEMA.extend({vol.Required("mute"): bool}))
+            schema=vol.Schema({
+                vol.Required("mute"): bool,
+                vol.Optional("entity_id"): cv.entity_ids,
+                vol.Optional("device_id"): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional("area_id"): vol.All(cv.ensure_list, [cv.string]),
+            }))
 
     return True
 
