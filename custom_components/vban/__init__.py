@@ -1,7 +1,8 @@
 """The VBAN VoiceMeeter integration."""
 import asyncio
+from datetime import timedelta
 import logging
-from typing import Dict
+from typing import Dict, Callable
 
 import voluptuous as vol
 
@@ -11,6 +12,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.target import async_extract_referenced_entity_ids, TargetSelection
 
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
@@ -31,6 +33,7 @@ class VBANData:
         self.clients: Dict[int, AsyncVBANClient] = {}
         self.remotes: Dict[str, VoicemeeterRemote] = {}
         self.ref_counts: Dict[int, int] = {}
+        self.watchdogs: Dict[str, Callable] = {}
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up VBAN VoiceMeeter from a config entry."""
@@ -65,6 +68,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         attempts += 1
 
     vban_data.remotes[entry.entry_id] = remote
+
+    # --- Online Watchdog (HA Synchronized) ---
+    async def check_connection(_now):
+        """Watchdog to re-register for RT packets if device goes offline."""
+        if not remote.online:
+            _LOGGER.debug("VBAN device %s offline, re-registering for RT packets", host)
+            rt_stream = device._streams.get("Voicemeeter-RTP")
+            if rt_stream and hasattr(rt_stream, "register_for_updates"):
+                try:
+                    await rt_stream.register_for_updates()
+                except Exception as err:
+                    _LOGGER.warning("Failed to re-register VBAN device %s: %s", host, err)
+
+    # Use 30s interval to align with standard HA scan intervals
+    vban_data.watchdogs[entry.entry_id] = async_track_time_interval(
+        hass, check_connection, timedelta(seconds=30)
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -116,6 +136,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     vban_data: VBANData = hass.data[DOMAIN]
     remote = vban_data.remotes.pop(entry.entry_id)
     await remote.stop()
+
+    if unsub_watchdog := vban_data.watchdogs.pop(entry.entry_id, None):
+        unsub_watchdog()
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         listen_port = DEFAULT_PORT
