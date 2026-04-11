@@ -97,6 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def handle_send_raw_command(call: ServiceCall):
         command = call.data.get("command")
+        _LOGGER.info("Service: send_raw_command called with %s", command)
         
         # Use proper TargetSelection to handle device_id, area_id, etc.
         selection = TargetSelection(call.data)

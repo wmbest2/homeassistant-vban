@@ -59,6 +59,8 @@ class VBANBaseEntity(Entity):
 
     async def async_send_raw_command(self, command: str):
         """Service: send raw command."""
+        from .__init__ import _LOGGER
+        _LOGGER.info("Sending raw command to %s: %s", self.remote.device.address, command)
         await self.remote.send_command(command)
 
     async def async_set_gain(self, gain: float):
