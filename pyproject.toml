@@ -1,6 +1,6 @@
 [project]
 name = "homeassistant-vban"
-version = "0.7.0"
+dynamic = ["version"]
 description = "VBAN VoiceMeeter integration for Home Assistant"
 readme = "README.md"
 authors = [
@@ -12,6 +12,10 @@ dependencies = [
     "homeassistant",
 ]
 
+[tool.hatch.version]
+path = "custom_components/vban/manifest.json"
+pattern = "\"version\": \"(?P<version>[^\"]+)\""
+
 [tool.uv]
 package = false
 dev-dependencies = [
@@ -20,3 +24,7 @@ dev-dependencies = [
     "pytest-cov",
     "pytest",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
