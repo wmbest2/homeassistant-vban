@@ -46,9 +46,13 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
         return self.obj.mute
 
     async def async_turn_on(self, **kwargs):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Turning ON %s for %s", self.name, self.remote.device.address)
         await self.obj.set_mute(True)
 
     async def async_turn_off(self, **kwargs):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Turning OFF %s for %s", self.name, self.remote.device.address)
         await self.obj.set_mute(False)
 
 class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
@@ -69,9 +73,13 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
         return self.obj.solo
 
     async def async_turn_on(self, **kwargs):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Turning ON solo for %s at %s", self.name, self.remote.device.address)
         await self.obj.set_solo(True)
 
     async def async_turn_off(self, **kwargs):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Turning OFF solo for %s at %s", self.name, self.remote.device.address)
         await self.obj.set_solo(False)
 
 class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
@@ -93,7 +101,11 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
         return getattr(self.obj, self.bus_id)
 
     async def async_turn_on(self, **kwargs):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Turning ON routing to %s for %s", self.bus_id.upper(), self.name)
         await self.obj.set_bus_routing(self.bus_id, True)
 
     async def async_turn_off(self, **kwargs):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Turning OFF routing to %s for %s", self.bus_id.upper(), self.name)
         await self.obj.set_bus_routing(self.bus_id, False)

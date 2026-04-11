@@ -46,4 +46,6 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
         return self.obj.gain
 
     async def async_set_native_value(self, value: float):
+        from .__init__ import _LOGGER
+        _LOGGER.info("Setting gain for %s to %.1f", self.name, value)
         await self.obj.set_gain(value)
