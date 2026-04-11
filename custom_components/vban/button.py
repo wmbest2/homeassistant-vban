@@ -1,11 +1,14 @@
 """Button platform for VBAN VoiceMeeter."""
+import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -54,12 +57,14 @@ class VBANRestartButton(VBANBaseButton):
     """Button to restart VoiceMeeter audio engine."""
     _attr_name = "Restart Audio Engine"
     _attr_icon = "mdi:restart"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, remote):
         super().__init__(remote)
         self._attr_unique_id = f"{remote.device.address}_restart_engine"
 
     async def async_press(self) -> None:
+        _LOGGER.info("Restarting VoiceMeeter audio engine for %s", self.remote.device.address)
         await self.remote.restart()
 
 class VBANShowWindowButton(VBANBaseButton):
@@ -67,10 +72,12 @@ class VBANShowWindowButton(VBANBaseButton):
     _attr_name = "Show VM Window"
     _attr_icon = "mdi:window-maximize"
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, remote):
         super().__init__(remote)
         self._attr_unique_id = f"{remote.device.address}_show_window"
 
     async def async_press(self) -> None:
+        _LOGGER.info("Showing VoiceMeeter window for %s", self.remote.device.address)
         await self.remote.show()

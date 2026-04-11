@@ -1,4 +1,5 @@
 """Number platform for VBAN VoiceMeeter."""
+import logging
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -6,6 +7,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import VBANBaseEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -38,14 +41,12 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
 
     @property
     def name(self):
-        label = self.obj.label or f"{self.kind.capitalize()} {self.index + 1}"
-        return f"{label} Gain"
+        return "Gain"
 
     @property
     def native_value(self):
         return self.obj.gain
 
     async def async_set_native_value(self, value: float):
-        from .__init__ import _LOGGER
         _LOGGER.info("Setting gain for %s to %.1f", self.name, value)
         await self.obj.set_gain(value)

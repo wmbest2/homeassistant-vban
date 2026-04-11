@@ -1,4 +1,5 @@
 """Switch platform for VBAN VoiceMeeter."""
+import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -6,6 +7,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import VBANBaseEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -38,20 +41,17 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
 
     @property
     def name(self):
-        label = self.obj.label or f"{self.kind.capitalize()} {self.index + 1}"
-        return f"{label} Mute"
+        return "Mute"
 
     @property
     def is_on(self):
         return self.obj.mute
 
     async def async_turn_on(self, **kwargs):
-        from .__init__ import _LOGGER
         _LOGGER.info("Turning ON %s for %s", self.name, self.remote.device.address)
         await self.obj.set_mute(True)
 
     async def async_turn_off(self, **kwargs):
-        from .__init__ import _LOGGER
         _LOGGER.info("Turning OFF %s for %s", self.name, self.remote.device.address)
         await self.obj.set_mute(False)
 
@@ -65,20 +65,17 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
 
     @property
     def name(self):
-        label = self.obj.label or f"Strip {self.index + 1}"
-        return f"{label} Solo"
+        return "Solo"
 
     @property
     def is_on(self):
         return self.obj.solo
 
     async def async_turn_on(self, **kwargs):
-        from .__init__ import _LOGGER
         _LOGGER.info("Turning ON solo for %s at %s", self.name, self.remote.device.address)
         await self.obj.set_solo(True)
 
     async def async_turn_off(self, **kwargs):
-        from .__init__ import _LOGGER
         _LOGGER.info("Turning OFF solo for %s at %s", self.name, self.remote.device.address)
         await self.obj.set_solo(False)
 
@@ -93,19 +90,16 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
 
     @property
     def name(self):
-        label = self.obj.label or f"Strip {self.index + 1}"
-        return f"{label} -> {self.bus_id.upper()}"
+        return f"-> {self.bus_id.upper()}"
 
     @property
     def is_on(self):
         return getattr(self.obj, self.bus_id)
 
     async def async_turn_on(self, **kwargs):
-        from .__init__ import _LOGGER
         _LOGGER.info("Turning ON routing to %s for %s", self.bus_id.upper(), self.name)
         await self.obj.set_bus_routing(self.bus_id, True)
 
     async def async_turn_off(self, **kwargs):
-        from .__init__ import _LOGGER
         _LOGGER.info("Turning OFF routing to %s for %s", self.bus_id.upper(), self.name)
         await self.obj.set_bus_routing(self.bus_id, False)

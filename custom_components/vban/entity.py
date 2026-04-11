@@ -1,9 +1,12 @@
 """Base class for VBAN VoiceMeeter entities."""
-from homeassistant.helpers.entity import DeviceInfo, Entity
+import logging
+from homeassistant.helpers.entity import DeviceInfo, Entity, EntityCategory
 from homeassistant.core import callback
 
 from aiovban.enums import VoicemeeterType
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 class VBANBaseEntity(Entity):
     """Common properties for VBAN entities."""
@@ -14,12 +17,20 @@ class VBANBaseEntity(Entity):
         self.remote = remote
         self.kind = kind
         self.index = index
+        
+        # Base Device Info (The VoiceMeeter Host)
+        host_id = (DOMAIN, remote.device.address)
+        
+        # Sub-device Info (The specific Strip or Bus)
+        sub_id = (DOMAIN, f"{remote.device.address}_{kind}_{index}")
+        
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, remote.device.address)},
-            name=f"VoiceMeeter ({remote.device.address})",
+            identifiers={sub_id},
+            name=f"{self.identifier} ({self.obj.label})" if self.obj.label else self.identifier,
             manufacturer="VB-Audio",
             model=remote.type.name if remote.type else "VoiceMeeter",
             sw_version=remote.version,
+            via_device=host_id,
         )
 
     @property
@@ -59,7 +70,6 @@ class VBANBaseEntity(Entity):
 
     async def async_send_raw_command(self, command: str):
         """Service: send raw command."""
-        from .__init__ import _LOGGER
         _LOGGER.info("Sending raw command to %s: %s", self.remote.device.address, command)
         await self.remote.send_command(command)
 

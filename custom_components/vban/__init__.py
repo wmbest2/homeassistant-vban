@@ -69,22 +69,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     vban_data.remotes[entry.entry_id] = remote
 
-    _LOGGER.info("VBAN remote for %s initialized: online=%s, type=%s", host, remote.online, remote.type)
-
     # --- Online Watchdog (HA Synchronized) ---
     async def check_connection(_now):
         """Watchdog to re-register for RT packets if device goes offline."""
-        _LOGGER.debug("Watchdog check for VBAN %s: online=%s, last_update=%s", host, remote.online, remote.last_update)
         if not remote.online:
-            _LOGGER.info("VBAN device %s offline, re-registering for RT packets", host)
+            _LOGGER.debug("VBAN device %s offline, re-registering for RT packets", host)
             rt_stream = device._streams.get("Voicemeeter-RTP")
             if rt_stream and hasattr(rt_stream, "register_for_updates"):
                 try:
                     await rt_stream.register_for_updates()
                 except Exception as err:
                     _LOGGER.warning("Failed to re-register VBAN device %s: %s", host, err)
-            else:
-                _LOGGER.warning("VBAN device %s has no active RT stream to register", host)
 
     # Use 30s interval to align with standard HA scan intervals
     vban_data.watchdogs[entry.entry_id] = async_track_time_interval(
