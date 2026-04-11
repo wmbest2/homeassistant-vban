@@ -1,29 +1,31 @@
 """Number platform for VBAN VoiceMeeter."""
+from __future__ import annotations
+
 import logging
 from homeassistant.components.number import NumberEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from . import VBANConfigEntry
 from .entity import VBANBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: VBANConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VBAN numbers."""
-    vban_data = hass.data[DOMAIN]
-    remote = vban_data.remotes[entry.entry_id]
+    data = entry.runtime_data
+    remote = data.remote
+    coordinator = data.coordinator
 
     entities = []
     for strip in remote.strips:
-        entities.append(VBANGainNumber(remote, "strip", strip.index))
+        entities.append(VBANGainNumber(coordinator, "strip", strip.index))
     for bus in remote.buses:
-        entities.append(VBANGainNumber(remote, "bus", bus.index))
+        entities.append(VBANGainNumber(coordinator, "bus", bus.index))
 
     async_add_entities(entities)
 
@@ -35,9 +37,9 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
     _attr_native_step = 0.1
     _attr_native_unit_of_measurement = "dB"
 
-    def __init__(self, remote, kind, index):
-        super().__init__(remote, kind, index)
-        self._attr_unique_id = f"{remote.device.address}_{kind}_{index}_gain"
+    def __init__(self, coordinator, kind, index):
+        super().__init__(coordinator, kind, index)
+        self._attr_unique_id = f"{self.remote.device.address}_{kind}_{index}_gain"
         self._attr_suggested_object_id = f"{kind}_{index + 1}_gain"
 
     @property

@@ -3802,7 +3802,6 @@ wheels = [
 
 [[package]]
 name = "homeassistant-vban"
-version = "0.7.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiovban" },

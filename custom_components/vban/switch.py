@@ -1,33 +1,35 @@
 """Switch platform for VBAN VoiceMeeter."""
+from __future__ import annotations
+
 import logging
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from . import VBANConfigEntry
 from .entity import VBANBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: VBANConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VBAN switches."""
-    vban_data = hass.data[DOMAIN]
-    remote = vban_data.remotes[entry.entry_id]
+    data = entry.runtime_data
+    remote = data.remote
+    coordinator = data.coordinator
 
     entities = []
     for strip in remote.strips:
-        entities.append(VBANMuteSwitch(remote, "strip", strip.index))
-        entities.append(VBANSoloSwitch(remote, strip.index))
+        entities.append(VBANMuteSwitch(coordinator, "strip", strip.index))
+        entities.append(VBANSoloSwitch(coordinator, strip.index))
         for bus_id in ["A1", "A2", "A3", "B1", "B2", "B3"]:
-            entities.append(VBANRoutingSwitch(remote, strip.index, bus_id))
+            entities.append(VBANRoutingSwitch(coordinator, strip.index, bus_id))
             
     for bus in remote.buses:
-        entities.append(VBANMuteSwitch(remote, "bus", bus.index))
+        entities.append(VBANMuteSwitch(coordinator, "bus", bus.index))
 
     async_add_entities(entities)
 
@@ -35,9 +37,9 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     """Mute switch for VBAN."""
     _attr_translation_key = "mute"
 
-    def __init__(self, remote, kind, index):
-        super().__init__(remote, kind, index)
-        self._attr_unique_id = f"{remote.device.address}_{kind}_{index}_mute"
+    def __init__(self, coordinator, kind, index):
+        super().__init__(coordinator, kind, index)
+        self._attr_unique_id = f"{self.remote.device.address}_{kind}_{index}_mute"
         self._attr_suggested_object_id = f"{kind}_{index + 1}_mute"
 
     @property
@@ -56,9 +58,9 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
     """Solo switch for VBAN."""
     _attr_translation_key = "solo"
 
-    def __init__(self, remote, index):
-        super().__init__(remote, "strip", index)
-        self._attr_unique_id = f"{remote.device.address}_strip_{index}_solo"
+    def __init__(self, coordinator, index):
+        super().__init__(coordinator, "strip", index)
+        self._attr_unique_id = f"{self.remote.device.address}_strip_{index}_solo"
         self._attr_suggested_object_id = f"strip_{index + 1}_solo"
 
     @property
@@ -77,10 +79,10 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
     """Routing switch for VBAN."""
     _attr_translation_key = "bus_routing"
 
-    def __init__(self, remote, index, bus_id):
-        super().__init__(remote, "strip", index)
+    def __init__(self, coordinator, index, bus_id):
+        super().__init__(coordinator, "strip", index)
         self.bus_id = bus_id.lower()
-        self._attr_unique_id = f"{remote.device.address}_strip_{index}_route_{self.bus_id}"
+        self._attr_unique_id = f"{self.remote.device.address}_strip_{index}_route_{self.bus_id}"
         self._attr_suggested_object_id = f"strip_{index + 1}_route_{self.bus_id}"
         self._attr_translation_placeholders = {"bus": bus_id.upper()}
 

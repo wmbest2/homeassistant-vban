@@ -1,41 +1,45 @@
 """Base class for VBAN VoiceMeeter entities."""
+from __future__ import annotations
+
 import logging
-from homeassistant.helpers.entity import DeviceInfo, Entity, EntityCategory
-from homeassistant.core import callback
+
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from aiovban.enums import VoicemeeterType
 from .const import DOMAIN
+from .coordinator import VBANUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-class VBANBaseEntity(Entity):
+class VBANBaseEntity(CoordinatorEntity[VBANUpdateCoordinator]):
     """Common properties for VBAN entities."""
     _attr_has_entity_name = True
-    _attr_should_poll = False
 
-    def __init__(self, remote, kind, index):
-        self.remote = remote
+    def __init__(self, coordinator: VBANUpdateCoordinator, kind: str, index: int) -> None:
+        super().__init__(coordinator)
+        self.remote = coordinator.remote
         self.kind = kind
         self.index = index
         
         # Base Device Info (The VoiceMeeter Host)
-        host_id = (DOMAIN, remote.device.address)
+        host_id = (DOMAIN, self.remote.device.address)
         
         # Sub-device Info (The specific Strip or Bus)
-        sub_id = (DOMAIN, f"{remote.device.address}_{kind}_{index}")
+        sub_id = (DOMAIN, f"{self.remote.device.address}_{kind}_{index}")
         
         self._attr_device_info = DeviceInfo(
             identifiers={sub_id},
             name=f"{self.identifier} ({self.obj.label})" if self.obj.label else self.identifier,
             manufacturer="VB-Audio",
-            model=remote.type.name if remote.type else "VoiceMeeter",
-            sw_version=remote.version,
+            model=self.remote.type.name if self.remote.type else "VoiceMeeter",
+            sw_version=self.remote.version,
             via_device=host_id,
         )
 
     @property
     def available(self) -> bool:
-        return self.remote.online
+        return self.remote.online and super().available
 
     @property
     def obj(self):
@@ -55,28 +59,15 @@ class VBANBaseEntity(Entity):
             return f"A{self.index + 1}"
         return f"B{self.index - phys_limit + 1}"
 
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks."""
-        self.remote.add_callback(self._handle_coordinator_update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister callbacks."""
-        self.remote.remove_callback(self._handle_coordinator_update)
-
-    @callback
-    def _handle_coordinator_update(self, remote, body) -> None:
-        """Update the entity state."""
-        self.async_write_ha_state()
-
-    async def async_send_raw_command(self, command: str):
+    async def async_send_raw_command(self, command: str) -> None:
         """Service: send raw command."""
         _LOGGER.info("Sending raw command to %s: %s", self.remote.device.address, command)
         await self.remote.send_command(command)
 
-    async def async_set_gain(self, gain: float):
+    async def async_set_gain(self, gain: float) -> None:
         """Service: set gain."""
         await self.obj.set_gain(gain)
 
-    async def async_set_mute(self, mute: bool):
+    async def async_set_mute(self, mute: bool) -> None:
         """Service: set mute."""
         await self.obj.set_mute(mute)

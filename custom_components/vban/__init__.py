@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from dataclasses import dataclass
 import logging
 from typing import Dict, Callable, Any
 
@@ -10,7 +11,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform, CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 import homeassistant.helpers.config_validation as cv
@@ -20,6 +21,7 @@ from homeassistant.helpers.target import async_extract_referenced_entity_ids, Ta
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
 
 from .const import DOMAIN, CONF_COMMAND_STREAM, DEFAULT_PORT
+from .coordinator import VBANUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,15 +31,23 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
 ]
 
-class VBANData:
-    """Storage for VBAN clients and remotes."""
+# Shared client state across all entries
+class VBANSharedState:
+    """Storage for shared VBAN clients."""
     def __init__(self) -> None:
         self.clients: Dict[int, AsyncVBANClient] = {}
-        self.remotes: Dict[str, VoicemeeterRemote] = {}
         self.ref_counts: Dict[int, int] = {}
-        self.watchdogs: Dict[str, Callable[[], None]] = {}
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+@dataclass
+class VBANRuntimeData:
+    """Data for a VBAN config entry."""
+    remote: VoicemeeterRemote
+    coordinator: VBANUpdateCoordinator
+    unsub_watchdog: Callable[[], None]
+
+type VBANConfigEntry = ConfigEntry[VBANRuntimeData]
+
+async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool:
     """Set up VBAN VoiceMeeter from a config entry."""
     host: str = entry.data[CONF_HOST]
     port: int = entry.data[CONF_PORT]
@@ -46,19 +56,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.debug("Initializing VBAN integration for %s:%s", host, port)
 
-    vban_data: VBANData = hass.data.setdefault(DOMAIN, VBANData())
+    # Use entry.runtime_data for entry-specific data
+    # Use hass.data for cross-entry shared state
+    shared_state: VBANSharedState = hass.data.setdefault(DOMAIN, VBANSharedState())
 
-    if listen_port not in vban_data.clients:
+    if listen_port not in shared_state.clients:
         client = AsyncVBANClient()
         try:
             await client.listen("0.0.0.0", listen_port)
-            vban_data.clients[listen_port] = client
-            vban_data.ref_counts[listen_port] = 0
+            shared_state.clients[listen_port] = client
+            shared_state.ref_counts[listen_port] = 0
         except Exception as err:
             raise ConfigEntryNotReady(f"Failed to listen on VBAN port {listen_port}: {err}") from err
     
-    client = vban_data.clients[listen_port]
-    vban_data.ref_counts[listen_port] += 1
+    client = shared_state.clients[listen_port]
+    shared_state.ref_counts[listen_port] += 1
 
     device = await client.register_device(host, port)
     remote = VoicemeeterRemote(device, stream)
@@ -70,7 +82,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await asyncio.sleep(0.1)
         attempts += 1
 
-    vban_data.remotes[entry.entry_id] = remote
+    coordinator = VBANUpdateCoordinator(hass, remote, host)
+    await coordinator._async_setup()
 
     # --- Online Watchdog (HA Synchronized) ---
     async def check_connection(_now: Any) -> None:
@@ -84,9 +97,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 except Exception as err:
                     _LOGGER.warning("Failed to re-register VBAN device %s: %s", host, err)
 
-    # Use 30s interval to align with standard HA scan intervals
-    vban_data.watchdogs[entry.entry_id] = async_track_time_interval(
+    unsub_watchdog = async_track_time_interval(
         hass, check_connection, timedelta(seconds=30)
+    )
+
+    entry.runtime_data = VBANRuntimeData(
+        remote=remote,
+        coordinator=coordinator,
+        unsub_watchdog=unsub_watchdog,
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -100,18 +118,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         selection = TargetSelection(call.data)
         referenced = async_extract_referenced_entity_ids(hass, selection)
         
-        target_remotes = set()
+        target_remotes = []
         
         if not selection.has_any_target:
-            target_remotes = set(vban_data.remotes.values())
+            # Broadcast to ALL entries
+            for e in hass.config_entries.async_entries(DOMAIN):
+                if hasattr(e, "runtime_data"):
+                    target_remotes.append(e.runtime_data.remote)
         else:
             for d_id in referenced.referenced_devices:
                 dev_reg = dr.async_get(hass)
                 d_entry = dev_reg.async_get(d_id)
                 if d_entry:
                     for config_id in d_entry.config_entries:
-                        if config_id in vban_data.remotes:
-                            target_remotes.add(vban_data.remotes[config_id])
+                        e = hass.config_entries.async_get_entry(config_id)
+                        if e and e.domain == DOMAIN and hasattr(e, "runtime_data"):
+                            target_remotes.append(e.runtime_data.remote)
 
         if not target_remotes:
             _LOGGER.warning("No VoiceMeeter hosts found for targeted devices")
@@ -135,23 +157,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool:
     """Unload a config entry."""
-    vban_data: VBANData = hass.data[DOMAIN]
-    remote = vban_data.remotes.pop(entry.entry_id)
-    await remote.stop()
-
-    if unsub_watchdog := vban_data.watchdogs.pop(entry.entry_id, None):
-        unsub_watchdog()
+    data = entry.runtime_data
+    await data.remote.stop()
+    data.unsub_watchdog()
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     
     if unload_ok:
+        shared_state: VBANSharedState = hass.data[DOMAIN]
         listen_port = DEFAULT_PORT
-        vban_data.ref_counts[listen_port] -= 1
-        if vban_data.ref_counts[listen_port] <= 0:
-            client = vban_data.clients.pop(listen_port)
+        shared_state.ref_counts[listen_port] -= 1
+        if shared_state.ref_counts[listen_port] <= 0:
+            client = shared_state.clients.pop(listen_port)
             client.close()
-            vban_data.ref_counts.pop(listen_port)
+            shared_state.ref_counts.pop(listen_port)
 
     return unload_ok

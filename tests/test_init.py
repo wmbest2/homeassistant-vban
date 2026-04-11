@@ -41,7 +41,9 @@ async def test_setup_unload_entry(hass: HomeAssistant, mock_vban_client, mock_vo
         await hass.async_block_till_done()
 
     assert config_entry.state is ConfigEntryState.LOADED
-    assert DOMAIN in hass.data
+    # Modern check: runtime_data should exist
+    assert config_entry.runtime_data is not None
+    assert config_entry.runtime_data.remote == mock_voicemeeter_remote
     
     # Test unload
     assert await hass.config_entries.async_unload(config_entry.entry_id)
