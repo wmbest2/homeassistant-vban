@@ -29,6 +29,7 @@ async def async_setup_entry(
 
 class VBANGainNumber(VBANBaseEntity, NumberEntity):
     """Gain number for VBAN."""
+    _attr_translation_key = "gain"
     _attr_native_min_value = -60.0
     _attr_native_max_value = 12.0
     _attr_native_step = 0.1
@@ -40,13 +41,9 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
         self._attr_suggested_object_id = f"{kind}_{index + 1}_gain"
 
     @property
-    def name(self):
-        return "Gain"
-
-    @property
     def native_value(self):
         return self.obj.gain
 
     async def async_set_native_value(self, value: float):
-        _LOGGER.info("Setting gain for %s to %.1f", self.name, value)
+        _LOGGER.info("Setting gain for %s to %.1f", self.identifier, value)
         await self.obj.set_gain(value)

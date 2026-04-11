@@ -55,7 +55,7 @@ class VBANBaseButton(ButtonEntity):
 
 class VBANRestartButton(VBANBaseButton):
     """Button to restart VoiceMeeter audio engine."""
-    _attr_name = "Restart Audio Engine"
+    _attr_translation_key = "restart_engine"
     _attr_icon = "mdi:restart"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -69,7 +69,7 @@ class VBANRestartButton(VBANBaseButton):
 
 class VBANShowWindowButton(VBANBaseButton):
     """Button to show VoiceMeeter window."""
-    _attr_name = "Show VM Window"
+    _attr_translation_key = "show_window"
     _attr_icon = "mdi:window-maximize"
     _attr_entity_registry_enabled_default = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC

@@ -1,21 +1,15 @@
 send_raw_command:
-  name: Send raw command
-  description: Sends a raw text command to the targeted VoiceMeeter device
   target:
     device:
       integration: vban
   fields:
     command:
-      name: Command
-      description: The raw command string
       required: true
       example: "Strip[0].Mute=1;"
       selector:
         text:
 
 set_gain:
-  name: Set gain
-  description: Set gain for a specific strip or bus number entity
   target:
     entity:
       integration: vban
@@ -23,8 +17,6 @@ set_gain:
         - number
   fields:
     gain:
-      name: Gain
-      description: Gain in dB
       required: true
       example: -10.5
       selector:
@@ -36,8 +28,6 @@ set_gain:
           mode: box
 
 set_mute:
-  name: Set mute
-  description: Set mute state for a specific strip or bus switch entity
   target:
     entity:
       integration: vban
@@ -45,8 +35,6 @@ set_mute:
         - switch
   fields:
     mute:
-      name: Mute
-      description: True to mute, False to unmute
       required: true
       example: true
       selector:

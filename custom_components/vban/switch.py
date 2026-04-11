@@ -33,6 +33,7 @@ async def async_setup_entry(
 
 class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     """Mute switch for VBAN."""
+    _attr_translation_key = "mute"
 
     def __init__(self, remote, kind, index):
         super().__init__(remote, kind, index)
@@ -40,23 +41,20 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
         self._attr_suggested_object_id = f"{kind}_{index + 1}_mute"
 
     @property
-    def name(self):
-        return "Mute"
-
-    @property
     def is_on(self):
         return self.obj.mute
 
     async def async_turn_on(self, **kwargs):
-        _LOGGER.info("Turning ON %s for %s", self.name, self.remote.device.address)
+        _LOGGER.info("Turning ON %s for %s", self.identifier, self.remote.device.address)
         await self.obj.set_mute(True)
 
     async def async_turn_off(self, **kwargs):
-        _LOGGER.info("Turning OFF %s for %s", self.name, self.remote.device.address)
+        _LOGGER.info("Turning OFF %s for %s", self.identifier, self.remote.device.address)
         await self.obj.set_mute(False)
 
 class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
     """Solo switch for VBAN."""
+    _attr_translation_key = "solo"
 
     def __init__(self, remote, index):
         super().__init__(remote, "strip", index)
@@ -64,42 +62,36 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
         self._attr_suggested_object_id = f"strip_{index + 1}_solo"
 
     @property
-    def name(self):
-        return "Solo"
-
-    @property
     def is_on(self):
         return self.obj.solo
 
     async def async_turn_on(self, **kwargs):
-        _LOGGER.info("Turning ON solo for %s at %s", self.name, self.remote.device.address)
+        _LOGGER.info("Turning ON solo for %s at %s", self.identifier, self.remote.device.address)
         await self.obj.set_solo(True)
 
     async def async_turn_off(self, **kwargs):
-        _LOGGER.info("Turning OFF solo for %s at %s", self.name, self.remote.device.address)
+        _LOGGER.info("Turning OFF solo for %s at %s", self.identifier, self.remote.device.address)
         await self.obj.set_solo(False)
 
 class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
     """Routing switch for VBAN."""
+    _attr_translation_key = "bus_routing"
 
     def __init__(self, remote, index, bus_id):
         super().__init__(remote, "strip", index)
         self.bus_id = bus_id.lower()
         self._attr_unique_id = f"{remote.device.address}_strip_{index}_route_{self.bus_id}"
         self._attr_suggested_object_id = f"strip_{index + 1}_route_{self.bus_id}"
-
-    @property
-    def name(self):
-        return f"-> {self.bus_id.upper()}"
+        self._attr_translation_placeholders = {"bus": bus_id.upper()}
 
     @property
     def is_on(self):
         return getattr(self.obj, self.bus_id)
 
     async def async_turn_on(self, **kwargs):
-        _LOGGER.info("Turning ON routing to %s for %s", self.bus_id.upper(), self.name)
+        _LOGGER.info("Turning ON routing to %s for %s", self.bus_id.upper(), self.identifier)
         await self.obj.set_bus_routing(self.bus_id, True)
 
     async def async_turn_off(self, **kwargs):
-        _LOGGER.info("Turning OFF routing to %s for %s", self.bus_id.upper(), self.name)
+        _LOGGER.info("Turning OFF routing to %s for %s", self.bus_id.upper(), self.identifier)
         await self.obj.set_bus_routing(self.bus_id, False)
