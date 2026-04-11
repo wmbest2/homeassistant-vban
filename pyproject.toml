@@ -1,0 +1,22 @@
+[project]
+name = "homeassistant-vban"
+version = "0.7.0"
+description = "VBAN VoiceMeeter integration for Home Assistant"
+readme = "README.md"
+authors = [
+    { name = "Bill Best", email = "wmbest2@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "aiovban==1.0.3",
+    "homeassistant",
+]
+
+[tool.uv]
+package = false
+dev-dependencies = [
+    "pytest-homeassistant-custom-component",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest",
+]
