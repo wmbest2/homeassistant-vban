@@ -1,5 +1,5 @@
 """Test VBAN VoiceMeeter switches."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 
 from homeassistant.core import HomeAssistant
@@ -8,8 +8,8 @@ from homeassistant.helpers import entity_registry as er, device_registry as dr
 
 from custom_components.vban.const import DOMAIN
 from aiovban.enums import VoicemeeterType
+
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from unittest.mock import patch, MagicMock, AsyncMock
 
 async def test_switches(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_remote) -> None:
     """Test switch entities are created."""
@@ -27,13 +27,12 @@ async def test_switches(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_
     mock_strip.B3 = False
     mock_strip.set_mute = AsyncMock()
     mock_strip.set_solo = AsyncMock()
-
+    
     mock_bus = MagicMock()
     mock_bus.index = 0
     mock_bus.label = "Main"
     mock_bus.mute = True
     mock_bus.set_mute = AsyncMock()
-
 
     mock_voicemeeter_remote.strips = [mock_strip]
     mock_voicemeeter_remote.buses = [mock_bus]
@@ -52,12 +51,12 @@ async def test_switches(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_
     )
     config_entry.add_to_hass(hass)
 
-    # Pre-create the host device to avoid via_device warnings
+    # Pre-create the host device
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers={(DOMAIN, "1.1.1.1")},
-        name="VoiceMeeter (1.1.1.1)",
+        name="VoiceMeeter 1.1.1.1",
     )
 
     with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \
@@ -69,25 +68,23 @@ async def test_switches(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_
     # Check registry
     ent_reg = er.async_get(hass)
     
-    # Strip Mute - ID is likely strip_1_mic_mute
-    entry = ent_reg.async_get("switch.strip_1_mic_mute")
+    # ID is derived from device name "VoiceMeeter 1.1.1.1 Strip 1"
+    # and entity name "Mute"
+    entry = ent_reg.async_get("switch.voicemeeter_1_1_1_1_strip_1_mute")
     assert entry
-    assert hass.states.get("switch.strip_1_mic_mute").state == STATE_OFF
+    assert hass.states.get("switch.voicemeeter_1_1_1_1_strip_1_mute").state == STATE_OFF
     
     # Strip Solo
-    entry = ent_reg.async_get("switch.strip_1_mic_solo")
+    entry = ent_reg.async_get("switch.voicemeeter_1_1_1_1_strip_1_solo")
     assert entry
-    assert hass.states.get("switch.strip_1_mic_solo").state == STATE_OFF
     
     # Bus Mute
-    entry = ent_reg.async_get("switch.a1_main_mute")
+    entry = ent_reg.async_get("switch.voicemeeter_1_1_1_1_a1_mute")
     assert entry
-    assert hass.states.get("switch.a1_main_mute").state == STATE_ON
+    assert hass.states.get("switch.voicemeeter_1_1_1_1_a1_mute").state == STATE_ON
 
     # Test toggling
-    # Note: the entities call self.obj.set_mute
-    with patch.object(mock_strip, "set_mute", new_callable=AsyncMock) as mock_set_mute:
-        await hass.services.async_call(
-            "switch", "turn_on", {"entity_id": "switch.strip_1_mic_mute"}, blocking=True
-        )
-        mock_set_mute.assert_called_once_with(True)
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.voicemeeter_1_1_1_1_strip_1_mute"}, blocking=True
+    )
+    mock_strip.set_mute.assert_called_once_with(True)

@@ -6,7 +6,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VBANConfigEntry
+from . import VBANConfigEntry, VBANUpdateCoordinator
 from .entity import VBANBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,10 +37,9 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     """Mute switch for VBAN."""
     _attr_translation_key = "mute"
 
-    def __init__(self, coordinator, kind, index):
+    def __init__(self, coordinator: VBANUpdateCoordinator, kind: str, index: int) -> None:
         super().__init__(coordinator, kind, index)
         self._attr_unique_id = f"{self.remote.device.address}_{kind}_{index}_mute"
-        self._attr_suggested_object_id = f"{kind}_{index + 1}_mute"
 
     @property
     def is_on(self):
@@ -58,10 +57,9 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
     """Solo switch for VBAN."""
     _attr_translation_key = "solo"
 
-    def __init__(self, coordinator, index):
+    def __init__(self, coordinator: VBANUpdateCoordinator, index: int) -> None:
         super().__init__(coordinator, "strip", index)
         self._attr_unique_id = f"{self.remote.device.address}_strip_{index}_solo"
-        self._attr_suggested_object_id = f"strip_{index + 1}_solo"
 
     @property
     def is_on(self):
@@ -79,11 +77,10 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
     """Routing switch for VBAN."""
     _attr_translation_key = "bus_routing"
 
-    def __init__(self, coordinator, index, bus_id):
+    def __init__(self, coordinator: VBANUpdateCoordinator, index: int, bus_id: str) -> None:
         super().__init__(coordinator, "strip", index)
         self.bus_id = bus_id.lower()
         self._attr_unique_id = f"{self.remote.device.address}_strip_{index}_route_{self.bus_id}"
-        self._attr_suggested_object_id = f"strip_{index + 1}_route_{self.bus_id}"
         self._attr_translation_placeholders = {"bus": bus_id.upper()}
 
     @property

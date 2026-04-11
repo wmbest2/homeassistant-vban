@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -9,6 +10,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from aiovban.enums import VoicemeeterType
 from .const import DOMAIN
 from .coordinator import VBANUpdateCoordinator
+
+if TYPE_CHECKING:
+    pass
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +34,7 @@ class VBANBaseEntity(CoordinatorEntity[VBANUpdateCoordinator]):
         
         self._attr_device_info = DeviceInfo(
             identifiers={sub_id},
-            name=f"{self.identifier} ({self.obj.label})" if self.obj.label else self.identifier,
+            name=f"VoiceMeeter {self.remote.device.address} {self.identifier}",
             manufacturer="VB-Audio",
             model=self.remote.type.name if self.remote.type else "VoiceMeeter",
             sw_version=self.remote.version,

@@ -1,4 +1,4 @@
-"""Test VBAN VoiceMeeter numbers."""
+"""Test VBAN VoiceMeeter labels."""
 from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 
@@ -10,14 +10,13 @@ from aiovban.enums import VoicemeeterType
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_remote) -> None:
-    """Test number entities are created."""
+async def test_labels(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_remote) -> None:
+    """Test label text entities are created."""
     # Setup mock remote with one strip
     mock_strip = MagicMock()
     mock_strip.index = 0
-    mock_strip.label = "Mic"
-    mock_strip.gain = -10.0
-    mock_strip.set_gain = AsyncMock()
+    mock_strip.label = "Old Name"
+    mock_strip.set_label = AsyncMock()
 
     mock_voicemeeter_remote.strips = [mock_strip]
     mock_voicemeeter_remote.buses = []
@@ -52,12 +51,12 @@ async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_r
 
     # Check registry
     ent_reg = er.async_get(hass)
-    entry = ent_reg.async_get("number.voicemeeter_1_1_1_1_strip_1_gain")
+    entry = ent_reg.async_get("text.voicemeeter_1_1_1_1_strip_1_label")
     assert entry
-    assert hass.states.get("number.voicemeeter_1_1_1_1_strip_1_gain").state == "-10.0"
+    assert hass.states.get("text.voicemeeter_1_1_1_1_strip_1_label").state == "Old Name"
 
     # Test setting value
     await hass.services.async_call(
-        "number", "set_value", {"entity_id": "number.voicemeeter_1_1_1_1_strip_1_gain", "value": -5.5}, blocking=True
+        "text", "set_value", {"entity_id": "text.voicemeeter_1_1_1_1_strip_1_label", "value": "New Name"}, blocking=True
     )
-    mock_strip.set_gain.assert_called_once_with(-5.5)
+    mock_strip.set_label.assert_called_once_with("New Name")

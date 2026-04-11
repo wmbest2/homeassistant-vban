@@ -29,6 +29,7 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.NUMBER,
     Platform.BUTTON,
+    Platform.TEXT,
 ]
 
 # Shared client state across all entries

@@ -43,6 +43,11 @@
       "gain": {
         "name": "Gain"
       }
+    },
+    "text": {
+      "label": {
+        "name": "Label"
+      }
     }
   },
   "services": {

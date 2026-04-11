@@ -6,7 +6,7 @@ from homeassistant.components.number import NumberEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VBANConfigEntry
+from . import VBANConfigEntry, VBANUpdateCoordinator
 from .entity import VBANBaseEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,10 +37,9 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
     _attr_native_step = 0.1
     _attr_native_unit_of_measurement = "dB"
 
-    def __init__(self, coordinator, kind, index):
+    def __init__(self, coordinator: VBANUpdateCoordinator, kind: str, index: int) -> None:
         super().__init__(coordinator, kind, index)
         self._attr_unique_id = f"{self.remote.device.address}_{kind}_{index}_gain"
-        self._attr_suggested_object_id = f"{kind}_{index + 1}_gain"
 
     @property
     def native_value(self):
