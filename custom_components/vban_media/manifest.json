@@ -1,0 +1,12 @@
+{
+  "domain": "vban_media",
+  "name": "VBAN Media Player",
+  "documentation": "https://github.com/wmbest2/homeassistant-vban",
+  "dependencies": ["vban", "media_source"],
+  "after_dependencies": ["ffmpeg"],
+  "codeowners": ["@wmbest2"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "version": "0.1.0",
+  "requirements": ["miniaudio>=1.59", "aiovban==1.0.3"]
+}
