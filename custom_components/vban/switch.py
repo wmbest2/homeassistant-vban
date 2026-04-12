@@ -40,6 +40,7 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     def __init__(self, coordinator: VBANUpdateCoordinator, kind: str, index: int) -> None:
         super().__init__(coordinator, kind, index)
         self._attr_unique_id = f"{self.remote.device.address}_{kind}_{index}_mute"
+        self._attr_suggested_object_id = f"{kind}_{index + 1}_mute"
 
     @property
     def is_on(self):
@@ -60,6 +61,7 @@ class VBANSoloSwitch(VBANBaseEntity, SwitchEntity):
     def __init__(self, coordinator: VBANUpdateCoordinator, index: int) -> None:
         super().__init__(coordinator, "strip", index)
         self._attr_unique_id = f"{self.remote.device.address}_strip_{index}_solo"
+        self._attr_suggested_object_id = f"strip_{index + 1}_solo"
 
     @property
     def is_on(self):
@@ -81,6 +83,7 @@ class VBANRoutingSwitch(VBANBaseEntity, SwitchEntity):
         super().__init__(coordinator, "strip", index)
         self.bus_id = bus_id.lower()
         self._attr_unique_id = f"{self.remote.device.address}_strip_{index}_route_{self.bus_id}"
+        self._attr_suggested_object_id = f"strip_{index + 1}_route_{self.bus_id}"
         self._attr_translation_placeholders = {"bus": bus_id.upper()}
 
     @property

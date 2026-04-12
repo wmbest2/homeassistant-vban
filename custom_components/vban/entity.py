@@ -34,7 +34,7 @@ class VBANBaseEntity(CoordinatorEntity[VBANUpdateCoordinator]):
         
         self._attr_device_info = DeviceInfo(
             identifiers={sub_id},
-            name=f"VoiceMeeter {self.remote.device.address} {self.identifier}",
+            name=f"{self.identifier} ({self.obj.label})" if self.obj.label else self.identifier,
             manufacturer="VB-Audio",
             model=self.remote.type.name if self.remote.type else "VoiceMeeter",
             sw_version=self.remote.version,

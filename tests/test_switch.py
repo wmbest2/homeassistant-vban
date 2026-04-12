@@ -56,7 +56,7 @@ async def test_switches(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_
     dev_reg.async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers={(DOMAIN, "1.1.1.1")},
-        name="VoiceMeeter 1.1.1.1",
+        name="VoiceMeeter (1.1.1.1)",
     )
 
     with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \
@@ -68,23 +68,22 @@ async def test_switches(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_
     # Check registry
     ent_reg = er.async_get(hass)
     
-    # ID is derived from device name "VoiceMeeter 1.1.1.1 Strip 1"
-    # and entity name "Mute"
-    entry = ent_reg.async_get("switch.voicemeeter_1_1_1_1_strip_1_mute")
+    # ID is derived from device name "Strip 1 (Mic)" and entity name "Mute"
+    entry = ent_reg.async_get("switch.strip_1_mic_mute")
     assert entry
-    assert hass.states.get("switch.voicemeeter_1_1_1_1_strip_1_mute").state == STATE_OFF
+    assert hass.states.get("switch.strip_1_mic_mute").state == STATE_OFF
     
     # Strip Solo
-    entry = ent_reg.async_get("switch.voicemeeter_1_1_1_1_strip_1_solo")
+    entry = ent_reg.async_get("switch.strip_1_mic_solo")
     assert entry
     
-    # Bus Mute
-    entry = ent_reg.async_get("switch.voicemeeter_1_1_1_1_a1_mute")
+    # Bus Mute - Device name is "A1 (Main)"
+    entry = ent_reg.async_get("switch.a1_main_mute")
     assert entry
-    assert hass.states.get("switch.voicemeeter_1_1_1_1_a1_mute").state == STATE_ON
+    assert hass.states.get("switch.a1_main_mute").state == STATE_ON
 
     # Test toggling
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.voicemeeter_1_1_1_1_strip_1_mute"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.strip_1_mic_mute"}, blocking=True
     )
     mock_strip.set_mute.assert_called_once_with(True)

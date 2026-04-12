@@ -41,7 +41,7 @@ async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_r
     dev_reg.async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers={(DOMAIN, "1.1.1.1")},
-        name="VoiceMeeter 1.1.1.1",
+        name="VoiceMeeter (1.1.1.1)",
     )
 
     with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \
@@ -52,12 +52,13 @@ async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_r
 
     # Check registry
     ent_reg = er.async_get(hass)
-    entry = ent_reg.async_get("number.voicemeeter_1_1_1_1_strip_1_gain")
+    # ID is derived from device name "Strip 1 (Mic)" and entity name "Gain"
+    entry = ent_reg.async_get("number.strip_1_mic_gain")
     assert entry
-    assert hass.states.get("number.voicemeeter_1_1_1_1_strip_1_gain").state == "-10.0"
+    assert hass.states.get("number.strip_1_mic_gain").state == "-10.0"
 
     # Test setting value
     await hass.services.async_call(
-        "number", "set_value", {"entity_id": "number.voicemeeter_1_1_1_1_strip_1_gain", "value": -5.5}, blocking=True
+        "number", "set_value", {"entity_id": "number.strip_1_mic_gain", "value": -5.5}, blocking=True
     )
     mock_strip.set_gain.assert_called_once_with(-5.5)

@@ -40,6 +40,7 @@ class VBANGainNumber(VBANBaseEntity, NumberEntity):
     def __init__(self, coordinator: VBANUpdateCoordinator, kind: str, index: int) -> None:
         super().__init__(coordinator, kind, index)
         self._attr_unique_id = f"{self.remote.device.address}_{kind}_{index}_gain"
+        self._attr_suggested_object_id = f"{kind}_{index + 1}_gain"
 
     @property
     def native_value(self):

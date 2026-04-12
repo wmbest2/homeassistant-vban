@@ -40,7 +40,7 @@ async def test_labels(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_re
     dev_reg.async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers={(DOMAIN, "1.1.1.1")},
-        name="VoiceMeeter 1.1.1.1",
+        name="VoiceMeeter (1.1.1.1)",
     )
 
     with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \
@@ -51,12 +51,13 @@ async def test_labels(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_re
 
     # Check registry
     ent_reg = er.async_get(hass)
-    entry = ent_reg.async_get("text.voicemeeter_1_1_1_1_strip_1_label")
+    # ID is derived from device name "Strip 1 (Old Name)" and entity name "Label"
+    entry = ent_reg.async_get("text.strip_1_old_name_label")
     assert entry
-    assert hass.states.get("text.voicemeeter_1_1_1_1_strip_1_label").state == "Old Name"
+    assert hass.states.get("text.strip_1_old_name_label").state == "Old Name"
 
     # Test setting value
     await hass.services.async_call(
-        "text", "set_value", {"entity_id": "text.voicemeeter_1_1_1_1_strip_1_label", "value": "New Name"}, blocking=True
+        "text", "set_value", {"entity_id": "text.strip_1_old_name_label", "value": "New Name"}, blocking=True
     )
     mock_strip.set_label.assert_called_once_with("New Name")
