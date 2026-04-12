@@ -9,11 +9,14 @@ from typing import Any
 
 import miniaudio
 from homeassistant.components.media_player import (
+    BrowseMedia,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
     MediaType,
+    async_process_play_media_url,
 )
+from homeassistant.components.media_source import async_browse_media, async_resolve_media
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
@@ -47,7 +50,8 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
     _attr_supported_features = (
         MediaPlayerEntityFeature.PLAY_MEDIA |
-        MediaPlayerEntityFeature.STOP
+        MediaPlayerEntityFeature.STOP |
+        MediaPlayerEntityFeature.BROWSE_MEDIA
     )
 
     def __init__(
@@ -81,15 +85,34 @@ class VBANMediaPlayer(MediaPlayerEntity):
         """Return the state of the player."""
         return self._state
 
+    async def async_browse_media(
+        self,
+        media_content_type: str | None = None,
+        media_content_id: str | None = None,
+    ) -> BrowseMedia:
+        """Implement the browsing of media."""
+        return await async_browse_media(self.hass, media_content_id, content_filter=lambda item: item.media_content_type.startswith("audio/"))
+
     async def async_play_media(
         self, media_type: MediaType | str, media_id: str, **kwargs: Any
     ) -> None:
         """Play media."""
+        _LOGGER.debug("Play media requested: %s (%s)", media_id, media_type)
+        
+        # Resolve media source if necessary
+        if media_id.startswith("media-source://"):
+            media_source = await async_resolve_media(self.hass, media_id, self.entity_id)
+            media_url = media_source.url
+        else:
+            media_url = media_id
+
+        media_url = async_process_play_media_url(self.hass, media_url)
+
         await self.async_stop()
         self._state = MediaPlayerState.PLAYING
         self.async_write_ha_state()
         
-        self._current_task = asyncio.create_task(self._stream_audio(media_id))
+        self._current_task = asyncio.create_task(self._stream_audio(media_url))
 
     async def async_stop(self) -> None:
         """Stop playback."""
@@ -104,11 +127,14 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self.async_write_ha_state()
 
-    async def _stream_audio(self, media_id: str) -> None:
+    async def _stream_audio(self, media_url: str) -> None:
         """Background task to stream audio via VBAN."""
         try:
             # VBAN Packet Header setup
-            sr_byte = SAMPLE_RATE_48000
+            # subprotocol (bits 5-7) | data (bits 0-4)
+            # For audio, subprotocol is 0x00. Sample rate index is bits 0-4.
+            sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
+            
             samples_per_packet = 256
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
@@ -116,12 +142,13 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             stream_name_bytes = self._stream_name.encode('utf-8')[:16].ljust(16, b'\x00')
             
-            header_prefix = b'VBAN' + struct.pack('BBBB', sr_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
+            header_prefix = b'VBAN' + struct.pack('BBBB', sub_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
             
-            _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", media_id, self._host, self._port)
+            _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", media_url, self._host, self._port)
             
+            # miniaudio.stream_any can take a filename or URL
             stream = miniaudio.stream_any(
-                media_id,
+                media_url,
                 output_format=miniaudio.SampleFormat.SIGNED16,
                 nchannels=2,
                 sample_rate=48000
