@@ -6,6 +6,9 @@ import logging
 import struct
 import time
 import socket
+import os
+import tempfile
+import urllib.request
 from typing import Any
 import concurrent.futures
 
@@ -145,10 +148,22 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
     def _stream_audio_sync(self, media_url: str) -> None:
         """Synchronous audio streaming to avoid asyncio timing issues."""
+        temp_file = None
         try:
+            # If it's a URL, download to a temporary file first for miniaudio
+            if media_url.startswith(("http://", "https://")):
+                _LOGGER.debug("Downloading media to temporary file: %s", media_url)
+                with urllib.request.urlopen(media_url) as response:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
+                        tmp.write(response.read())
+                        temp_file = tmp.name
+                stream_source = temp_file
+            else:
+                stream_source = media_url
+
             # VBAN Packet Header setup
             sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
-            samples_per_packet = 256
+            samples_per_packet = 128 # Smaller packets for better compatibility
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
             fmt_byte = BIT_RESOLUTION_INT16 | (CODEC_PCM << 4)
@@ -156,11 +171,11 @@ class VBANMediaPlayer(MediaPlayerEntity):
             stream_name_bytes = self._stream_name.encode('utf-8')[:16].ljust(16, b'\x00')
             header_prefix = b'VBAN' + struct.pack('BBBB', sub_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
             
-            _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", media_url, self._host, self._port)
+            _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", stream_source, self._host, self._port)
             
             # Use stream_any to get decoded frames
             stream = miniaudio.stream_any(
-                media_url,
+                stream_source,
                 output_format=miniaudio.SampleFormat.SIGNED16,
                 nchannels=2,
                 sample_rate=48000
@@ -176,6 +191,10 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 frames_sent = 0
                 chunk_size = samples_per_packet * 2 * 2 # 2 channels * 2 bytes
                 
+                # Small initial buffer sleep
+                time.sleep(0.5)
+                start_time = time.perf_counter()
+
                 for chunk in stream:
                     if self._stop_event.is_set():
                         break
@@ -201,9 +220,17 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         
                         if sleep_time > 0:
                             time.sleep(sleep_time)
+                
+                _LOGGER.debug("Finished streaming %d packets (%d frames)", frame_counter, frames_sent)
                             
             finally:
                 sock.close()
                 
         except Exception:
             _LOGGER.exception("Error in VBAN audio stream sync")
+        finally:
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except Exception:
+                    _LOGGER.warning("Failed to remove temporary file %s", temp_file)
