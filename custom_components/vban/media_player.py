@@ -5,7 +5,9 @@ import asyncio
 import logging
 import struct
 import time
+import socket
 from typing import Any
+import concurrent.futures
 
 import miniaudio
 from homeassistant.components.media_player import (
@@ -72,6 +74,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._attr_unique_id = f"{entry.entry_id}_media_player"
         self._state = MediaPlayerState.IDLE
         self._current_task: asyncio.Task | None = None
+        self._stop_event = asyncio.Event()
 
         # Link to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
@@ -110,14 +113,15 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
         await self.async_stop()
         self._state = MediaPlayerState.PLAYING
+        self._stop_event.clear()
         self.async_write_ha_state()
         
-        self._current_task = asyncio.create_task(self._stream_audio(media_url))
+        self._current_task = asyncio.create_task(self._stream_audio_wrapper(media_url))
 
     async def async_stop(self) -> None:
         """Stop playback."""
+        self._stop_event.set()
         if self._current_task:
-            self._current_task.cancel()
             try:
                 await self._current_task
             except asyncio.CancelledError:
@@ -127,26 +131,34 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self.async_write_ha_state()
 
-    async def _stream_audio(self, media_url: str) -> None:
-        """Background task to stream audio via VBAN."""
+    async def _stream_audio_wrapper(self, media_url: str) -> None:
+        """Wrapper to run the blocking stream in a thread."""
+        loop = asyncio.get_running_loop()
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                await loop.run_in_executor(pool, self._stream_audio_sync, media_url)
+        except Exception:
+            _LOGGER.exception("Error in VBAN audio stream")
+        finally:
+            self._state = MediaPlayerState.IDLE
+            self.hass.add_job(self.async_write_ha_state)
+
+    def _stream_audio_sync(self, media_url: str) -> None:
+        """Synchronous audio streaming to avoid asyncio timing issues."""
         try:
             # VBAN Packet Header setup
-            # subprotocol (bits 5-7) | data (bits 0-4)
-            # For audio, subprotocol is 0x00. Sample rate index is bits 0-4.
             sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
-            
             samples_per_packet = 256
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
             fmt_byte = BIT_RESOLUTION_INT16 | (CODEC_PCM << 4)
             
             stream_name_bytes = self._stream_name.encode('utf-8')[:16].ljust(16, b'\x00')
-            
             header_prefix = b'VBAN' + struct.pack('BBBB', sub_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
             
             _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", media_url, self._host, self._port)
             
-            # miniaudio.stream_any can take a filename or URL
+            # Use stream_any to get decoded frames
             stream = miniaudio.stream_any(
                 media_url,
                 output_format=miniaudio.SampleFormat.SIGNED16,
@@ -156,45 +168,42 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             frame_counter = 0
             
-            loop = asyncio.get_running_loop()
-            transport, _ = await loop.create_datagram_endpoint(
-                lambda: asyncio.DatagramProtocol(),
-                remote_addr=(self._host, self._port)
-            )
+            # Use a standard UDP socket for synchronous sending
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             
             try:
-                start_time = time.monotonic()
+                start_time = time.perf_counter()
                 frames_sent = 0
-                chunk_size = samples_per_packet * 2 * 2
+                chunk_size = samples_per_packet * 2 * 2 # 2 channels * 2 bytes
                 
                 for chunk in stream:
+                    if self._stop_event.is_set():
+                        break
+                        
                     for i in range(0, len(chunk), chunk_size):
+                        if self._stop_event.is_set():
+                            break
+                            
                         payload = chunk[i:i+chunk_size]
                         if len(payload) < chunk_size:
                             payload = payload.ljust(chunk_size, b'\x00')
                         
                         packet = header_prefix + struct.pack('<I', frame_counter) + payload
-                        transport.sendto(packet)
+                        sock.sendto(packet, (self._host, self._port))
                         
                         frame_counter = (frame_counter + 1) % 0xFFFFFFFF
                         frames_sent += samples_per_packet
                         
+                        # High precision pacing
                         expected_time = start_time + (frames_sent / 48000)
-                        now = time.monotonic()
+                        now = time.perf_counter()
                         sleep_time = expected_time - now
                         
                         if sleep_time > 0:
-                            await asyncio.sleep(sleep_time)
-                        elif sleep_time < -0.1:
-                            pass
+                            time.sleep(sleep_time)
                             
             finally:
-                transport.close()
+                sock.close()
                 
-        except asyncio.CancelledError:
-            _LOGGER.debug("Audio stream cancelled")
         except Exception:
-            _LOGGER.exception("Error in VBAN audio stream")
-        finally:
-            self._state = MediaPlayerState.IDLE
-            self.async_write_ha_state()
+            _LOGGER.exception("Error in VBAN audio stream sync")
