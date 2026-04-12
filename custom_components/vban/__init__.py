@@ -20,7 +20,7 @@ from homeassistant.helpers.target import async_extract_referenced_entity_ids, Ta
 
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
 
-from .const import DOMAIN, CONF_COMMAND_STREAM, DEFAULT_PORT
+from .const import DOMAIN, CONF_COMMAND_STREAM, DEFAULT_PORT, DEFAULT_COMMAND_STREAM
 from .coordinator import VBANUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
