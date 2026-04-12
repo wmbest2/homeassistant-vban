@@ -163,7 +163,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
             # VBAN Packet Header setup
             sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
-            samples_per_packet = 128
+            samples_per_packet = 256 # 256 is standard and might help with stuttering
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
             fmt_byte = BIT_RESOLUTION_INT16 | (CODEC_PCM << 4)
@@ -173,7 +173,8 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             _LOGGER.debug("Starting VBAN stream to %s:%s", self._host, self._port)
             
-            # Use stream_file as it's more robust for local files than stream_any
+            # Use stream_file with a slight gain reduction to prevent clipping
+            # miniaudio.stream_file supports a gain parameter
             stream = miniaudio.stream_file(
                 stream_source,
                 output_format=miniaudio.SampleFormat.SIGNED16,
@@ -198,7 +199,13 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 for chunk in stream:
                     if self._stop_event.is_set():
                         break
-                        
+                    
+                    # Apply a software gain reduction to prevent clipping (0.8 = -2dB approximately)
+                    # We treat the chunk as an array of 16-bit signed integers
+                    audio_data = struct.unpack(f'<{len(chunk)//2}h', chunk)
+                    audio_data = [int(s * 0.8) for s in audio_data]
+                    chunk = struct.pack(f'<{len(audio_data)}h', *audio_data)
+
                     for i in range(0, len(chunk), chunk_size):
                         if self._stop_event.is_set():
                             break
