@@ -40,8 +40,8 @@ async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_r
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
         config_entry_id=config_entry.entry_id,
-        identifiers={(DOMAIN, "1.1.1.1")},
-        name="VoiceMeeter (1.1.1.1)",
+        identifiers={(DOMAIN, "VM-HOST")},
+        name="VoiceMeeter (VM-HOST)",
     )
 
     with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \
@@ -53,6 +53,7 @@ async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_r
     # Check registry
     ent_reg = er.async_get(hass)
     # ID is derived from device name "Strip 1 (Mic)" and entity name "Gain"
+    # unique_id is now "VM-HOST_strip_0_gain"
     entry = ent_reg.async_get("number.strip_1_mic_gain")
     assert entry
     assert hass.states.get("number.strip_1_mic_gain").state == "-10.0"

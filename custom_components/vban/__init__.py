@@ -77,9 +77,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool
     remote = VoicemeeterRemote(device, stream)
     await remote.start()
     
-    # Wait for device to identify itself
+    # Trigger a ping to get hardware/host info
+    await client.send_ping(host, port)
+
+    # Wait for device to identify itself (RT packet and Ping response)
     attempts = 0
-    while not remote.type and attempts < 100:
+    while (not remote.type or not device.connected_application_data) and attempts < 100:
+        if attempts % 20 == 0 and attempts > 0:
+            await client.send_ping(host, port)
         await asyncio.sleep(0.1)
         attempts += 1
 

@@ -26,11 +26,15 @@ class VBANBaseEntity(CoordinatorEntity[VBANUpdateCoordinator]):
         self.kind = kind
         self.index = index
         
+        # Determine stable host identifier (host_name > IP)
+        data = self.remote.device.connected_application_data
+        self.host_id = data.host_name if data and data.host_name else self.remote.device.address
+
         # Base Device Info (The VoiceMeeter Host)
-        host_id = (DOMAIN, self.remote.device.address)
+        host_id = (DOMAIN, self.host_id)
         
         # Sub-device Info (The specific Strip or Bus)
-        sub_id = (DOMAIN, f"{self.remote.device.address}_{kind}_{index}")
+        sub_id = (DOMAIN, f"{self.host_id}_{kind}_{index}")
         
         self._attr_device_info = DeviceInfo(
             identifiers={sub_id},

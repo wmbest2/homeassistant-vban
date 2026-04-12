@@ -39,8 +39,8 @@ async def test_labels(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_re
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
         config_entry_id=config_entry.entry_id,
-        identifiers={(DOMAIN, "1.1.1.1")},
-        name="VoiceMeeter (1.1.1.1)",
+        identifiers={(DOMAIN, "VM-HOST")},
+        name="VoiceMeeter (VM-HOST)",
     )
 
     with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \

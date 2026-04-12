@@ -20,6 +20,8 @@ def mock_voicemeeter_remote():
         remote.device.address = "1.1.1.1"
         remote.device.default_port = 6980
         remote.device._streams = {}
+        remote.device.connected_application_data = MagicMock()
+        remote.device.connected_application_data.host_name = "VM-HOST"
         remote.type = VoicemeeterType.POTATO
         remote.version = "3.0.4.2"
         remote.online = True
@@ -37,6 +39,7 @@ def mock_vban_client():
         client = mock.return_value
         client.listen = AsyncMock()
         client.register_device = AsyncMock()
+        client.send_ping = AsyncMock()
         yield client
 
 @pytest.fixture
