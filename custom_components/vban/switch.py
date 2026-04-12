@@ -40,7 +40,7 @@ class VBANMuteSwitch(VBANBaseEntity, SwitchEntity):
     def __init__(self, coordinator: VBANUpdateCoordinator, kind: str, index: int) -> None:
         super().__init__(coordinator, kind, index)
         self._attr_unique_id = f"{self.host_id}_{kind}_{index}_mute"
-        self._attr_suggested_object_id = f"{kind}_{index + 1}_mute"
+        self._attr_suggested_object_id = f"{self.identifier}_mute"
 
     @property
     def is_on(self):

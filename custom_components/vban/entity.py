@@ -30,13 +30,16 @@ class VBANBaseEntity(CoordinatorEntity[VBANUpdateCoordinator]):
         data = self.remote.device.connected_application_data
         self.host_id = data.host_name if data and data.host_name else self.remote.device.address
 
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information about this VBAN entity."""
         # Base Device Info (The VoiceMeeter Host)
         host_id = (DOMAIN, self.host_id)
         
         # Sub-device Info (The specific Strip or Bus)
-        sub_id = (DOMAIN, f"{self.host_id}_{kind}_{index}")
+        sub_id = (DOMAIN, f"{self.host_id}_{self.kind}_{self.index}")
         
-        self._attr_device_info = DeviceInfo(
+        return DeviceInfo(
             identifiers={sub_id},
             name=f"{self.identifier} ({self.obj.label})" if self.obj.label else self.identifier,
             manufacturer="VB-Audio",

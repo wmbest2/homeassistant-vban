@@ -5,6 +5,7 @@ import pytest
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.vban.const import DOMAIN, CONF_COMMAND_STREAM
 
@@ -38,3 +39,38 @@ async def test_user_form(hass: HomeAssistant) -> None:
         CONF_COMMAND_STREAM: "Command1",
     }
     assert len(mock_setup_entry.mock_calls) == 1
+
+async def test_options_flow(hass: HomeAssistant) -> None:
+    """Test options flow."""
+    entry = MockConfigEntry(
+        version=1,
+        domain=DOMAIN,
+        title="VoiceMeeter (1.1.1.1)",
+        data={
+            CONF_HOST: "1.1.1.1",
+            CONF_PORT: 6980,
+            CONF_COMMAND_STREAM: "Command1",
+        },
+        source="user",
+        options={},
+        entry_id="1",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["step_id"] == "init"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_PORT: 6981,
+            CONF_COMMAND_STREAM: "Command2",
+        },
+    )
+
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert entry.options == {
+        CONF_PORT: 6981,
+        CONF_COMMAND_STREAM: "Command2",
+    }

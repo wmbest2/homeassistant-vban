@@ -51,8 +51,8 @@ type VBANConfigEntry = ConfigEntry[VBANRuntimeData]
 async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool:
     """Set up VBAN VoiceMeeter from a config entry."""
     host: str = entry.data[CONF_HOST]
-    port: int = entry.data[CONF_PORT]
-    stream: str = entry.data[CONF_COMMAND_STREAM]
+    port: int = entry.options.get(CONF_PORT, entry.data.get(CONF_PORT, DEFAULT_PORT))
+    stream: str = entry.options.get(CONF_COMMAND_STREAM, entry.data.get(CONF_COMMAND_STREAM, DEFAULT_COMMAND_STREAM))
     listen_port: int = DEFAULT_PORT 
 
     _LOGGER.debug("Initializing VBAN integration for %s:%s", host, port)
@@ -115,6 +115,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register update listener
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
     # --- Global Service: send_raw_command (Target by Device) ---
 
     async def handle_send_raw_command(call: ServiceCall) -> None:
@@ -162,6 +165,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool
         )
 
     return True
+
+async def async_reload_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> None:
+    """Reload config entry."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 async def async_unload_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool:
     """Unload a config entry."""
