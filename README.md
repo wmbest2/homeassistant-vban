@@ -14,7 +14,24 @@ The single strip view offers precise, ergonomic control over individual inputs a
 
 ## Features
 
-- Control Strip/Bus Mute and Solo
-- Adjust Strip/Bus Gain
-- Global commands (Restart Engine, Show Window)
-- Dynamic updates via VBAN RT packets
+- **Bidirectional Control:** Sync mute, solo, and gain levels between Home Assistant and VoiceMeeter.
+- **VBAN Audio Streaming:** Stream audio (TTS, music, alerts) directly to VoiceMeeter using the VBAN protocol.
+- **High Efficiency:** Uses `miniaudio` for native, low-latency audio decoding and resampling without requiring external binaries like FFmpeg.
+- **Ergonomic UI:** Automatically generates interactive controls for all your VoiceMeeter strips and buses.
+- **Global Commands:** Support for Restart Engine and Show/Hide Window commands.
+- **Real-time Updates:** Stay in sync with VoiceMeeter via VBAN RT packets.
+
+## Installation
+
+### HACS (Recommended)
+1. Add this repository as a custom repository in HACS.
+2. Search for "VBAN VoiceMeeter" and click Install.
+3. Restart Home Assistant.
+
+## Configuration
+
+1. In Home Assistant, go to **Settings** > **Devices & Services**.
+2. Click **Add Integration** and search for **VBAN VoiceMeeter**.
+3. Enter your VoiceMeeter host IP and port (default is 6980).
+4. Configure your **Command Stream Name** (must match the 'VBAN Text Incoming Stream' in VoiceMeeter).
+5. Configure your **Media Stream Name** (must match a 'VBAN Audio Incoming Stream' in VoiceMeeter).

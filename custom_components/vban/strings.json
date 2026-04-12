@@ -5,9 +5,10 @@
         "data": {
           "host": "Host",
           "port": "Port",
-          "command_stream": "Command Stream Name"
+          "command_stream": "Command Stream Name",
+          "media_stream": "Media Stream Name"
         },
-        "description": "Enter the connection details for your VoiceMeeter host. The Command Stream name must match the 'VBAN Text Incoming Stream' name configured in VoiceMeeter (default is 'Command1')."
+        "description": "Enter the connection details for your VoiceMeeter host. The Command Stream name must match the 'VBAN Text Incoming Stream' name configured in VoiceMeeter (default is 'Command1'). The Media Stream name must match a 'VBAN Audio Incoming Stream' name (default is 'Stream1')."
       }
     },
     "error": {
@@ -47,6 +48,11 @@
     "text": {
       "label": {
         "name": "Label"
+      }
+    },
+    "media_player": {
+      "vban_media": {
+        "name": "VBAN Media ({stream})"
       }
     }
   },

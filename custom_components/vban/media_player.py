@@ -8,7 +8,6 @@ import time
 from typing import Any
 
 import miniaudio
-from homeassistant.components import ffmpeg
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -20,8 +19,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, CONF_DEVICE, CONF_STREAM_NAME
-from custom_components.vban.const import DOMAIN as VBAN_DOMAIN, CONF_HOST, CONF_PORT
+from .const import DOMAIN, CONF_HOST, CONF_PORT, CONF_MEDIA_STREAM, DEFAULT_PORT, DEFAULT_MEDIA_STREAM
+from . import VBANConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,20 +32,13 @@ CODEC_PCM = 0x00
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: VBANConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up VBAN Media Player from a config entry."""
-    vban_entry_id = entry.data[CONF_DEVICE]
-    vban_entry = hass.config_entries.async_get_entry(vban_entry_id)
-    
-    if not vban_entry:
-        _LOGGER.error("VBAN device not found for media player")
-        return
-
-    host = vban_entry.data[CONF_HOST]
-    port = vban_entry.options.get(CONF_PORT, vban_entry.data.get(CONF_PORT, 6980))
-    stream_name = entry.data[CONF_STREAM_NAME]
+    host = entry.data[CONF_HOST]
+    port = entry.options.get(CONF_PORT, entry.data.get(CONF_PORT, DEFAULT_PORT))
+    stream_name = entry.options.get(CONF_MEDIA_STREAM, entry.data.get(CONF_MEDIA_STREAM, DEFAULT_MEDIA_STREAM))
 
     async_add_entities([VBANMediaPlayer(hass, entry, host, port, stream_name)])
 
@@ -61,7 +53,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
     def __init__(
         self,
         hass: HomeAssistant,
-        entry: ConfigEntry,
+        entry: VBANConfigEntry,
         host: str,
         port: int,
         stream_name: str,
@@ -77,9 +69,11 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self._current_task: asyncio.Task | None = None
 
-        # Device Info links it to the main VBAN device
+        # Link to the main VBAN device
+        data = entry.runtime_data.remote.device.connected_application_data
+        host_id = data.host_name if data and data.host_name else host
         self._attr_device_info = DeviceInfo(
-            identifiers={(VBAN_DOMAIN, f"{host}_{port}")},
+            identifiers={(DOMAIN, host_id)},
         )
 
     @property
@@ -114,15 +108,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         """Background task to stream audio via VBAN."""
         try:
             # VBAN Packet Header setup
-            # 4 bytes: 'VBAN'
-            # 1 byte: Sample Rate (0x40 | index) - for audio, bit 5-7 is 000
-            # 1 byte: Samples per frame - 1 (e.g. 256 samples = 0xFF)
-            # 1 byte: Channels - 1 (e.g. 2 channels = 0x01)
-            # 1 byte: Format (Bit 0-2: BitResolution, Bit 3: Unused, Bit 4-7: Codec)
-            # 16 bytes: Stream Name (padded with nulls)
-            # 4 bytes: Frame Counter (incremented for each packet)
-            
-            sr_byte = SAMPLE_RATE_48000 # 48000Hz index is 3
+            sr_byte = SAMPLE_RATE_48000
             samples_per_packet = 256
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
@@ -132,11 +118,8 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             header_prefix = b'VBAN' + struct.pack('BBBB', sr_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
             
-            # Using miniaudio for decoding/resampling as fallback or primary
-            # (In a real implementation we might prefer ffmpeg if available)
-            _LOGGER.debug("Starting miniaudio stream for %s", media_id)
+            _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", media_id, self._host, self._port)
             
-            # miniaudio.stream_any can take a filename or URL
             stream = miniaudio.stream_any(
                 media_id,
                 output_format=miniaudio.SampleFormat.SIGNED16,
@@ -146,9 +129,6 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             frame_counter = 0
             
-            # Create a socket for sending
-            # In a real integration, we'd reuse the one from the core vban component
-            # but for this barebones demo, a new UDP socket is fine.
             loop = asyncio.get_running_loop()
             transport, _ = await loop.create_datagram_endpoint(
                 lambda: asyncio.DatagramProtocol(),
@@ -158,16 +138,12 @@ class VBANMediaPlayer(MediaPlayerEntity):
             try:
                 start_time = time.monotonic()
                 frames_sent = 0
-                
-                # Each VBAN packet will be 256 samples * 2 channels * 2 bytes = 1024 bytes payload
                 chunk_size = samples_per_packet * 2 * 2
                 
                 for chunk in stream:
-                    # miniaudio yields bytes. We need to chunk them to our samples_per_packet
                     for i in range(0, len(chunk), chunk_size):
                         payload = chunk[i:i+chunk_size]
                         if len(payload) < chunk_size:
-                            # If the last chunk is small, pad it with silence
                             payload = payload.ljust(chunk_size, b'\x00')
                         
                         packet = header_prefix + struct.pack('<I', frame_counter) + payload
@@ -176,8 +152,6 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         frame_counter = (frame_counter + 1) % 0xFFFFFFFF
                         frames_sent += samples_per_packet
                         
-                        # Pacing: Calculate when this packet should be sent
-                        # target_time = start_time + (total_samples / sample_rate)
                         expected_time = start_time + (frames_sent / 48000)
                         now = time.monotonic()
                         sleep_time = expected_time - now
@@ -185,7 +159,6 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         if sleep_time > 0:
                             await asyncio.sleep(sleep_time)
                         elif sleep_time < -0.1:
-                            # We're lagging, don't sleep
                             pass
                             
             finally:

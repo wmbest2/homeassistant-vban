@@ -30,6 +30,7 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.BUTTON,
     Platform.TEXT,
+    Platform.MEDIA_PLAYER,
 ]
 
 # Shared client state across all entries

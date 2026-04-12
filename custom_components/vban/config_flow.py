@@ -9,7 +9,14 @@ from aiovban.asyncio import AsyncVBANClient
 
 from homeassistant.core import callback
 
-from .const import DOMAIN, CONF_COMMAND_STREAM, DEFAULT_PORT, DEFAULT_COMMAND_STREAM
+from .const import (
+    DOMAIN, 
+    CONF_COMMAND_STREAM, 
+    CONF_MEDIA_STREAM,
+    DEFAULT_PORT, 
+    DEFAULT_COMMAND_STREAM,
+    DEFAULT_MEDIA_STREAM
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +24,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_HOST): str,
     vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
     vol.Optional(CONF_COMMAND_STREAM, default=DEFAULT_COMMAND_STREAM): str,
+    vol.Optional(CONF_MEDIA_STREAM, default=DEFAULT_MEDIA_STREAM): str,
 })
 
 class VBANConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -70,6 +78,13 @@ class VBANOptionsFlowHandler(config_entries.OptionsFlow):
                 default=self.config_entry.options.get(
                     CONF_COMMAND_STREAM, 
                     self.config_entry.data.get(CONF_COMMAND_STREAM, DEFAULT_COMMAND_STREAM)
+                ),
+            ): str,
+            vol.Optional(
+                CONF_MEDIA_STREAM,
+                default=self.config_entry.options.get(
+                    CONF_MEDIA_STREAM, 
+                    self.config_entry.data.get(CONF_MEDIA_STREAM, DEFAULT_MEDIA_STREAM)
                 ),
             ): str,
         }

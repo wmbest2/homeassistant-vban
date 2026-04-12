@@ -7,7 +7,12 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.vban.const import DOMAIN, CONF_COMMAND_STREAM
+from custom_components.vban.const import (
+    DOMAIN, 
+    CONF_COMMAND_STREAM, 
+    CONF_MEDIA_STREAM,
+    DEFAULT_MEDIA_STREAM
+)
 
 async def test_user_form(hass: HomeAssistant) -> None:
     """Test we get the form."""
@@ -27,6 +32,7 @@ async def test_user_form(hass: HomeAssistant) -> None:
                 CONF_HOST: "1.1.1.1",
                 CONF_PORT: 6980,
                 CONF_COMMAND_STREAM: "Command1",
+                CONF_MEDIA_STREAM: "Stream1",
             },
         )
         await hass.async_block_till_done()
@@ -37,6 +43,7 @@ async def test_user_form(hass: HomeAssistant) -> None:
         CONF_HOST: "1.1.1.1",
         CONF_PORT: 6980,
         CONF_COMMAND_STREAM: "Command1",
+        CONF_MEDIA_STREAM: "Stream1",
     }
     assert len(mock_setup_entry.mock_calls) == 1
 
@@ -50,6 +57,7 @@ async def test_options_flow(hass: HomeAssistant) -> None:
             CONF_HOST: "1.1.1.1",
             CONF_PORT: 6980,
             CONF_COMMAND_STREAM: "Command1",
+            CONF_MEDIA_STREAM: "Stream1",
         },
         source="user",
         options={},
@@ -66,6 +74,7 @@ async def test_options_flow(hass: HomeAssistant) -> None:
         user_input={
             CONF_PORT: 6981,
             CONF_COMMAND_STREAM: "Command2",
+            CONF_MEDIA_STREAM: "Stream2",
         },
     )
 
@@ -73,4 +82,5 @@ async def test_options_flow(hass: HomeAssistant) -> None:
     assert entry.options == {
         CONF_PORT: 6981,
         CONF_COMMAND_STREAM: "Command2",
+        CONF_MEDIA_STREAM: "Stream2",
     }
