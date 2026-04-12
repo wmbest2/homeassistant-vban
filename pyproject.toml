@@ -18,7 +18,9 @@ pattern = "\"version\": \"(?P<version>[^\"]+)\""
 
 [tool.uv]
 package = false
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
     "pytest-homeassistant-custom-component",
     "pytest-asyncio",
     "pytest-cov",
