@@ -152,7 +152,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         try:
             # If it's a URL, download to a temporary file first for miniaudio
             if media_url.startswith(("http://", "https://")):
-                _LOGGER.debug("Downloading media to temporary file: %s", media_url)
+                _LOGGER.debug("Downloading media to temporary file")
                 with urllib.request.urlopen(media_url) as response:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
                         tmp.write(response.read())
@@ -163,7 +163,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
             # VBAN Packet Header setup
             sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
-            samples_per_packet = 128 # Smaller packets for better compatibility
+            samples_per_packet = 128
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
             fmt_byte = BIT_RESOLUTION_INT16 | (CODEC_PCM << 4)
@@ -171,10 +171,10 @@ class VBANMediaPlayer(MediaPlayerEntity):
             stream_name_bytes = self._stream_name.encode('utf-8')[:16].ljust(16, b'\x00')
             header_prefix = b'VBAN' + struct.pack('BBBB', sub_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
             
-            _LOGGER.debug("Starting miniaudio stream for %s to %s:%s", stream_source, self._host, self._port)
+            _LOGGER.debug("Starting VBAN stream to %s:%s", self._host, self._port)
             
-            # Use stream_any to get decoded frames
-            stream = miniaudio.stream_any(
+            # Use stream_file as it's more robust for local files than stream_any
+            stream = miniaudio.stream_file(
                 stream_source,
                 output_format=miniaudio.SampleFormat.SIGNED16,
                 nchannels=2,
@@ -221,7 +221,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         if sleep_time > 0:
                             time.sleep(sleep_time)
                 
-                _LOGGER.debug("Finished streaming %d packets (%d frames)", frame_counter, frames_sent)
+                _LOGGER.debug("Finished VBAN stream: %d packets sent", frame_counter)
                             
             finally:
                 sock.close()
@@ -233,4 +233,4 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 try:
                     os.remove(temp_file)
                 except Exception:
-                    _LOGGER.warning("Failed to remove temporary file %s", temp_file)
+                    pass
