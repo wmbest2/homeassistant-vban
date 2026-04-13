@@ -8,14 +8,13 @@ import tempfile
 import urllib.request
 import threading
 import time
+import struct
 from typing import Any
 
 import miniaudio
 from aiovban import VBANSampleRate
 from aiovban.packet import VBANPacket, BytesBody
 from aiovban.packet.headers.audio import VBANAudioHeader, BitResolution, Codec
-from aiovban.asyncio.streams import BufferedVBANOutgoingStream
-from aiovban.asyncio.util import BackPressureStrategy
 
 from homeassistant.components.media_player import (
     BrowseMedia,
@@ -76,9 +75,8 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self._stream_task: asyncio.Task | None = None
         self._stop_event = threading.Event()
-        self._vban_stream: BufferedVBANOutgoingStream | None = None
 
-        # Device Info links it to the main VBAN device
+        # Link to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
         host_id = data.host_name if data and data.host_name else host
         self._attr_device_info = DeviceInfo(
@@ -135,47 +133,38 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self.async_write_ha_state()
 
     async def _async_stream_media(self, media_url: str) -> None:
-        """Asynchronous task to stream media using aiovban BufferedStream."""
-        temp_file = None
+        """Asynchronous task to stream media using direct client datagrams."""
+        # Define constants for our VBAN format
+        SAMPLE_RATE = 48000
+        CHANNELS = 2
+        SAMPLES_PER_PACKET = 256
+        BYTES_PER_PACKET = SAMPLES_PER_PACKET * CHANNELS * 2 # 16-bit PCM
+
+        _LOGGER.debug("Starting direct VBAN stream to %s:%s", self._host, self._port)
+
+        device = self._entry.runtime_data.remote.device
+        client = device._client
+        loop = asyncio.get_running_loop()
         
-        try:
-            # Resolve URL to local file if needed
-            if media_url.startswith(("http://", "https://")):
-                try:
-                    with urllib.request.urlopen(media_url) as response:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
-                            tmp.write(response.read())
-                            temp_file = tmp.name
-                    stream_source = temp_file
-                except Exception:
-                    _LOGGER.exception("Failed to download media")
-                    return
-            else:
-                stream_source = media_url
+        def download_decode_and_stream():
+            temp_file = None
+            try:
+                # 1. Download (moved inside thread to avoid blocking loop)
+                if media_url.startswith(("http://", "https://")):
+                    try:
+                        _LOGGER.debug("Downloading media to temporary file in worker thread")
+                        with urllib.request.urlopen(media_url) as response:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
+                                tmp.write(response.read())
+                                temp_file = tmp.name
+                        stream_source = temp_file
+                    except Exception:
+                        _LOGGER.exception("Failed to download media in worker thread")
+                        return
+                else:
+                    stream_source = media_url
 
-            # Setup or reuse aiovban buffered stream
-            if not self._vban_stream:
-                device = self._entry.runtime_data.remote.device
-                self._vban_stream = BufferedVBANOutgoingStream(
-                    name=self._stream_name,
-                    _client=device._client,
-                    buffer_size=500,
-                    back_pressure_strategy=BackPressureStrategy.BLOCK
-                )
-                await self._vban_stream.connect(self._host, self._port)
-
-            # Define constants for our VBAN format
-            SAMPLE_RATE = 48000
-            CHANNELS = 2
-            SAMPLES_PER_PACKET = 256
-            BYTES_PER_PACKET = SAMPLES_PER_PACKET * CHANNELS * 2 # 16-bit PCM
-
-            _LOGGER.debug("Starting VBAN buffered stream to %s:%s", self._host, self._port)
-
-            # Use miniaudio to decode the file/stream
-            loop = asyncio.get_running_loop()
-            
-            def decode_and_queue():
+                # 2. Decode and Stream
                 try:
                     stream = miniaudio.stream_file(
                         stream_source,
@@ -183,70 +172,68 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         nchannels=CHANNELS,
                         sample_rate=SAMPLE_RATE
                     )
-                    
-                    buffer = b""
-                    frames_sent = 0
-                    start_time = time.perf_counter()
+                except Exception:
+                    _LOGGER.exception("Failed to open miniaudio stream")
+                    return
+                
+                buffer = b""
+                frames_sent = 0
+                frame_counter = 0
+                start_time = time.perf_counter()
 
-                    for chunk in stream:
+                # Header is static except for frame counter
+                header = VBANAudioHeader(
+                    streamname=self._stream_name,
+                    sample_rate=VBANSampleRate.RATE_48000,
+                    codec=Codec.PCM,
+                    channels=CHANNELS,
+                    bit_resolution=BitResolution.INT16,
+                    samples_per_frame=SAMPLES_PER_PACKET,
+                )
+
+                for chunk in stream:
+                    if self._stop_event.is_set():
+                        break
+                    
+                    buffer += chunk
+                    while len(buffer) >= BYTES_PER_PACKET:
                         if self._stop_event.is_set():
                             break
+                            
+                        payload = buffer[:BYTES_PER_PACKET]
+                        buffer = buffer[BYTES_PER_PACKET:]
                         
-                        buffer += chunk
-                        while len(buffer) >= BYTES_PER_PACKET:
-                            if self._stop_event.is_set():
-                                break
-                                
-                            payload = buffer[:BYTES_PER_PACKET]
-                            buffer = buffer[BYTES_PER_PACKET:]
-                            
-                            packet = VBANPacket(
-                                header=VBANAudioHeader(
-                                    streamname=self._stream_name,
-                                    sample_rate=VBANSampleRate.RATE_48000,
-                                    codec=Codec.PCM,
-                                    channels=CHANNELS,
-                                    bit_resolution=BitResolution.INT16,
-                                    samples_per_frame=SAMPLES_PER_PACKET,
-                                ),
-                                body=BytesBody(payload)
-                            )
-                            
-                            # Queue packet for sending using run_coroutine_threadsafe
-                            # to ensure it correctly interacts with the event loop.
-                            asyncio.run_coroutine_threadsafe(
-                                self._vban_stream.send_packet(packet), 
-                                loop
-                            )
+                        header.framecount = frame_counter
+                        packet_bytes = header.pack() + payload
+                        
+                        # Send directly via client listener socket
+                        client.send_datagram(packet_bytes, (self._host, self._port))
 
-                            frames_sent += SAMPLES_PER_PACKET
+                        frame_counter = (frame_counter + 1) % 0xFFFFFFFF
+                        frames_sent += SAMPLES_PER_PACKET
+                        
+                        # High-precision pacing
+                        now = time.perf_counter()
+                        expected_time = start_time + (frames_sent / SAMPLE_RATE)
+                        sleep_time = expected_time - now
+                        
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                        elif sleep_time < -0.1:
+                            start_time = now - (frames_sent / SAMPLE_RATE)
                             
-                            # High-precision pacing in the thread
-                            now = time.perf_counter()
-                            expected_time = start_time + (frames_sent / SAMPLE_RATE)
-                            sleep_time = expected_time - now
-                            
-                            if sleep_time > 0:
-                                time.sleep(sleep_time)
-                            elif sleep_time < -0.1:
-                                # Catch up if significantly behind
-                                start_time = now - (frames_sent / SAMPLE_RATE)
-                                
-                except Exception:
-                    _LOGGER.exception("Error in VBAN decoding thread")
+            except Exception:
+                _LOGGER.exception("Error in VBAN streaming thread")
+            finally:
+                if temp_file and os.path.exists(temp_file):
+                    try: os.remove(temp_file)
+                    except: pass
 
-            # Run the heavy decoding and packet preparation in a background thread
-            await loop.run_in_executor(None, decode_and_queue)
-            _LOGGER.debug("VBAN stream finished")
+        await loop.run_in_executor(None, download_decode_and_stream)
+        _LOGGER.debug("VBAN stream finished")
+        self._state = MediaPlayerState.IDLE
+        self.hass.add_job(self.async_write_ha_state)
 
-        except asyncio.CancelledError:
-            _LOGGER.debug("VBAN stream task cancelled")
-        except Exception:
-            _LOGGER.exception("Error in VBAN media player")
-        finally:
-            self._state = MediaPlayerState.IDLE
-            self.hass.add_job(self.async_write_ha_state)
-            
-            if temp_file and os.path.exists(temp_file):
-                try: os.remove(temp_file)
-                except: pass
+    async def async_stop(self) -> None:
+        """HA stop service calls this."""
+        await self.async_media_stop()
