@@ -9,6 +9,7 @@ import socket
 import os
 import tempfile
 import urllib.request
+import threading
 from typing import Any
 import concurrent.futures
 
@@ -77,7 +78,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._attr_unique_id = f"{entry.entry_id}_media_player"
         self._state = MediaPlayerState.IDLE
         self._current_task: asyncio.Task | None = None
-        self._stop_event = asyncio.Event()
+        self._stop_event = threading.Event()
 
         # Link to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
@@ -114,14 +115,14 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
         media_url = async_process_play_media_url(self.hass, media_url)
 
-        await self.async_stop()
+        await self.async_media_stop()
         self._state = MediaPlayerState.PLAYING
         self._stop_event.clear()
         self.async_write_ha_state()
         
         self._current_task = asyncio.create_task(self._stream_audio_wrapper(media_url))
 
-    async def async_stop(self) -> None:
+    async def async_media_stop(self) -> None:
         """Stop playback."""
         self._stop_event.set()
         if self._current_task:
@@ -153,11 +154,15 @@ class VBANMediaPlayer(MediaPlayerEntity):
             # If it's a URL, download to a temporary file first for miniaudio
             if media_url.startswith(("http://", "https://")):
                 _LOGGER.debug("Downloading media to temporary file")
-                with urllib.request.urlopen(media_url) as response:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
-                        tmp.write(response.read())
-                        temp_file = tmp.name
-                stream_source = temp_file
+                try:
+                    with urllib.request.urlopen(media_url) as response:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
+                            tmp.write(response.read())
+                            temp_file = tmp.name
+                    stream_source = temp_file
+                except Exception:
+                    _LOGGER.exception("Failed to download media")
+                    return
             else:
                 stream_source = media_url
 
@@ -180,14 +185,16 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             _LOGGER.debug("Starting VBAN stream to %s:%s", self._host, self._port)
             
-            # Use DecodedGenerator for more control over chunking
-            # This ensures miniaudio resamples to exactly what we want
-            stream = miniaudio.stream_file(
-                stream_source,
-                output_format=miniaudio.SampleFormat.SIGNED16,
-                nchannels=2,
-                sample_rate=48000
-            )
+            try:
+                stream = miniaudio.stream_file(
+                    stream_source,
+                    output_format=miniaudio.SampleFormat.SIGNED16,
+                    nchannels=2,
+                    sample_rate=48000
+                )
+            except Exception:
+                _LOGGER.exception("Failed to open miniaudio stream")
+                return
             
             frame_counter = 0
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
