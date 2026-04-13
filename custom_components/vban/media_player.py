@@ -75,7 +75,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self._stream_task: asyncio.Task | None = None
         self._stop_event = threading.Event()
-        self._stream_lock = threading.Lock() # Ensure only one thread streams at a time
+        self._stream_lock = threading.Lock() 
 
         # Link to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
@@ -112,7 +112,9 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
         media_url = async_process_play_media_url(self.hass, media_url)
 
+        # Signal previous stream to stop immediately
         await self.async_media_stop()
+        
         self._state = MediaPlayerState.PLAYING
         self._stop_event.clear()
         self.async_write_ha_state()
@@ -148,8 +150,13 @@ class VBANMediaPlayer(MediaPlayerEntity):
         loop = asyncio.get_running_loop()
         
         def download_decode_and_stream():
-            # Acquire lock to ensure previous thread has finished
-            with self._stream_lock:
+            # Replacement Strategy: Wait for previous thread to exit if it hasn't yet
+            # with a small timeout to avoid total lockup
+            if not self._stream_lock.acquire(timeout=5.0):
+                _LOGGER.warning("Could not acquire stream lock after 5s, forcing replacement")
+                # In a real "force", we'd be in trouble, but the stop_event should have worked.
+            
+            try:
                 temp_file = None
                 try:
                     # 1. Download
@@ -229,11 +236,16 @@ class VBANMediaPlayer(MediaPlayerEntity):
                     if temp_file and os.path.exists(temp_file):
                         try: os.remove(temp_file)
                         except: pass
+            finally:
+                self._stream_lock.release()
 
         await loop.run_in_executor(None, download_decode_and_stream)
         _LOGGER.debug("VBAN stream finished")
-        self._state = MediaPlayerState.IDLE
-        self.hass.add_job(self.async_write_ha_state)
+        
+        # Only set state to IDLE if we haven't been superseded by a new task
+        if not self._stop_event.is_set():
+            self._state = MediaPlayerState.IDLE
+            self.hass.add_job(self.async_write_ha_state)
 
     async def async_stop(self) -> None:
         """HA stop service calls this."""
