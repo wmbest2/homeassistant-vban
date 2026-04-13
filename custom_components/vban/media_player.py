@@ -163,7 +163,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
 
             # VBAN Packet Header setup
             sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
-            samples_per_packet = 256 # 256 is standard
+            samples_per_packet = 128 # Reduced from 256 for lower latency/jitter
             sp_byte = samples_per_packet - 1
             ch_byte = 1 # Stereo (2-1)
             fmt_byte = BIT_RESOLUTION_INT16 | (CODEC_PCM << 4)
@@ -184,14 +184,12 @@ class VBANMediaPlayer(MediaPlayerEntity):
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             
             try:
+                # Pre-buffer: load some data before starting
+                time.sleep(1.0)
                 start_time = time.perf_counter()
                 frames_sent = 0
                 chunk_size = samples_per_packet * 2 * 2 # 2 channels * 2 bytes
                 
-                # Small initial buffer sleep
-                time.sleep(0.5)
-                start_time = time.perf_counter()
-
                 for chunk in stream:
                     if self._stop_event.is_set():
                         break
@@ -217,6 +215,9 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         
                         if sleep_time > 0:
                             time.sleep(sleep_time)
+                        elif sleep_time < -0.05:
+                            # We're lagging, reset start_time to current to avoid catch-up burst
+                            start_time = now - (frames_sent / 48000)
                 
                 _LOGGER.debug("Finished VBAN stream: %d packets sent", frame_counter)
                             
