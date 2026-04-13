@@ -75,6 +75,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self._stream_task: asyncio.Task | None = None
         self._stop_event = threading.Event()
+        self._stream_lock = threading.Lock() # Ensure only one thread streams at a time
 
         # Link to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
@@ -147,87 +148,87 @@ class VBANMediaPlayer(MediaPlayerEntity):
         loop = asyncio.get_running_loop()
         
         def download_decode_and_stream():
-            temp_file = None
-            try:
-                # 1. Download (moved inside thread to avoid blocking loop)
-                if media_url.startswith(("http://", "https://")):
-                    try:
-                        _LOGGER.debug("Downloading media to temporary file in worker thread")
-                        with urllib.request.urlopen(media_url) as response:
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
-                                tmp.write(response.read())
-                                temp_file = tmp.name
-                        stream_source = temp_file
-                    except Exception:
-                        _LOGGER.exception("Failed to download media in worker thread")
-                        return
-                else:
-                    stream_source = media_url
-
-                # 2. Decode and Stream
+            # Acquire lock to ensure previous thread has finished
+            with self._stream_lock:
+                temp_file = None
                 try:
-                    stream = miniaudio.stream_file(
-                        stream_source,
-                        output_format=miniaudio.SampleFormat.SIGNED16,
-                        nchannels=CHANNELS,
-                        sample_rate=SAMPLE_RATE
-                    )
-                except Exception:
-                    _LOGGER.exception("Failed to open miniaudio stream")
-                    return
-                
-                buffer = b""
-                frames_sent = 0
-                frame_counter = 0
-                start_time = time.perf_counter()
+                    # 1. Download
+                    if media_url.startswith(("http://", "https://")):
+                        try:
+                            _LOGGER.debug("Downloading media to temporary file in worker thread")
+                            with urllib.request.urlopen(media_url) as response:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
+                                    tmp.write(response.read())
+                                    temp_file = tmp.name
+                            stream_source = temp_file
+                        except Exception:
+                            _LOGGER.exception("Failed to download media in worker thread")
+                            return
+                    else:
+                        stream_source = media_url
 
-                # Header is static except for frame counter
-                header = VBANAudioHeader(
-                    streamname=self._stream_name,
-                    sample_rate=VBANSampleRate.RATE_48000,
-                    codec=Codec.PCM,
-                    channels=CHANNELS,
-                    bit_resolution=BitResolution.INT16,
-                    samples_per_frame=SAMPLES_PER_PACKET,
-                )
-
-                for chunk in stream:
-                    if self._stop_event.is_set():
-                        break
+                    # 2. Decode and Stream
+                    try:
+                        stream = miniaudio.stream_file(
+                            stream_source,
+                            output_format=miniaudio.SampleFormat.SIGNED16,
+                            nchannels=CHANNELS,
+                            sample_rate=SAMPLE_RATE
+                        )
+                    except Exception:
+                        _LOGGER.exception("Failed to open miniaudio stream")
+                        return
                     
-                    buffer += chunk
-                    while len(buffer) >= BYTES_PER_PACKET:
+                    buffer = b""
+                    frames_sent = 0
+                    frame_counter = 0
+                    start_time = time.perf_counter()
+
+                    header = VBANAudioHeader(
+                        streamname=self._stream_name,
+                        sample_rate=VBANSampleRate.RATE_48000,
+                        codec=Codec.PCM,
+                        channels=CHANNELS,
+                        bit_resolution=BitResolution.INT16,
+                        samples_per_frame=SAMPLES_PER_PACKET,
+                    )
+
+                    for chunk in stream:
                         if self._stop_event.is_set():
                             break
+                        
+                        buffer += chunk
+                        while len(buffer) >= BYTES_PER_PACKET:
+                            if self._stop_event.is_set():
+                                break
+                                
+                            payload = buffer[:BYTES_PER_PACKET]
+                            buffer = buffer[BYTES_PER_PACKET:]
                             
-                        payload = buffer[:BYTES_PER_PACKET]
-                        buffer = buffer[BYTES_PER_PACKET:]
-                        
-                        header.framecount = frame_counter
-                        packet_bytes = header.pack() + payload
-                        
-                        # Send directly via client listener socket
-                        client.send_datagram(packet_bytes, (self._host, self._port))
+                            header.framecount = frame_counter
+                            packet_bytes = header.pack() + payload
+                            
+                            client.send_datagram(packet_bytes, (self._host, self._port))
 
-                        frame_counter = (frame_counter + 1) % 0xFFFFFFFF
-                        frames_sent += SAMPLES_PER_PACKET
-                        
-                        # High-precision pacing
-                        now = time.perf_counter()
-                        expected_time = start_time + (frames_sent / SAMPLE_RATE)
-                        sleep_time = expected_time - now
-                        
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                        elif sleep_time < -0.1:
-                            start_time = now - (frames_sent / SAMPLE_RATE)
+                            frame_counter = (frame_counter + 1) % 0xFFFFFFFF
+                            frames_sent += SAMPLES_PER_PACKET
                             
-            except Exception:
-                _LOGGER.exception("Error in VBAN streaming thread")
-            finally:
-                if temp_file and os.path.exists(temp_file):
-                    try: os.remove(temp_file)
-                    except: pass
+                            # High-precision pacing
+                            now = time.perf_counter()
+                            expected_time = start_time + (frames_sent / SAMPLE_RATE)
+                            sleep_time = expected_time - now
+                            
+                            if sleep_time > 0:
+                                time.sleep(sleep_time)
+                            elif sleep_time < -0.1:
+                                start_time = now - (frames_sent / SAMPLE_RATE)
+                                
+                except Exception:
+                    _LOGGER.exception("Error in VBAN streaming thread")
+                finally:
+                    if temp_file and os.path.exists(temp_file):
+                        try: os.remove(temp_file)
+                        except: pass
 
         await loop.run_in_executor(None, download_decode_and_stream)
         _LOGGER.debug("VBAN stream finished")
