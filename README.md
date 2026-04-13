@@ -34,4 +34,7 @@ The single strip view offers precise, ergonomic control over individual inputs a
 2. Click **Add Integration** and search for **VBAN VoiceMeeter**.
 3. Enter your VoiceMeeter host IP and port (default is 6980).
 4. Configure your **Command Stream Name** (must match the 'VBAN Text Incoming Stream' in VoiceMeeter).
-5. Configure your **Media Stream Name** (must match a 'VBAN Audio Incoming Stream' in VoiceMeeter).
+## Credits
+
+- [VoiceMeeter](https://voicemeeter.com/) by VB-Audio.
+- Icon by [Icons8](https://icons8.com/icon/38621/voicemeeter).
