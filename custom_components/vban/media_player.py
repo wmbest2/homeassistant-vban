@@ -131,12 +131,6 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 pass
             self._stream_task = None
         
-        if self._vban_stream:
-            # We don't necessarily want to cancel the send task every time, 
-            # but we should clear the buffer if possible. 
-            # In aiovban 1.0.6, we'll just let it finish or be replaced next time.
-            pass
-
         self._state = MediaPlayerState.IDLE
         self.async_write_ha_state()
 
@@ -165,7 +159,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 self._vban_stream = BufferedVBANOutgoingStream(
                     name=self._stream_name,
                     _client=device._client,
-                    buffer_size=500, # Large buffer for stability
+                    buffer_size=500,
                     back_pressure_strategy=BackPressureStrategy.BLOCK
                 )
                 await self._vban_stream.connect(self._host, self._port)
@@ -218,13 +212,12 @@ class VBANMediaPlayer(MediaPlayerEntity):
                                 body=BytesBody(payload)
                             )
                             
-                            # Queue packet for sending
-                            # send_packet_nowait returns True if added to queue
-                            if not self._vban_stream.send_packet_nowait(packet, loop=loop):
-                                # Buffer might be full, though with BLOCK strategy this shouldn't happen 
-                                # but we're in a thread so we yield
-                                time.sleep(0.001)
-                                continue
+                            # Queue packet for sending using run_coroutine_threadsafe
+                            # to ensure it correctly interacts with the event loop.
+                            asyncio.run_coroutine_threadsafe(
+                                self._vban_stream.send_packet(packet), 
+                                loop
+                            )
 
                             frames_sent += SAMPLES_PER_PACKET
                             
