@@ -162,14 +162,21 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 stream_source = media_url
 
             # VBAN Packet Header setup
-            sub_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
-            samples_per_packet = 128 # Reduced from 256 for lower latency/jitter
+            # Byte 4: Subprotocol (0x00 for Audio) | Sample Rate Index (3 for 48000)
+            sr_byte = VBAN_PROTOCOL_AUDIO | SAMPLE_RATE_48000
+            
+            samples_per_packet = 256 # Standard size
+            # Byte 5: Samples per frame - 1
             sp_byte = samples_per_packet - 1
+            # Byte 6: Channels - 1
             ch_byte = 1 # Stereo (2-1)
+            # Byte 7: Bit resolution (0x01 for INT16) | Codec (0x00 for PCM)
             fmt_byte = BIT_RESOLUTION_INT16 | (CODEC_PCM << 4)
             
             stream_name_bytes = self._stream_name.encode('utf-8')[:16].ljust(16, b'\x00')
-            header_prefix = b'VBAN' + struct.pack('BBBB', sub_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
+            
+            # Header prefix (24 bytes)
+            header_prefix = b'VBAN' + struct.pack('BBBB', sr_byte, sp_byte, ch_byte, fmt_byte) + stream_name_bytes
             
             _LOGGER.debug("Starting VBAN stream to %s:%s", self._host, self._port)
             
@@ -202,13 +209,14 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         if len(payload) < chunk_size:
                             payload = payload.ljust(chunk_size, b'\x00')
                         
+                        # Byte 24-27: Frame counter (Little Endian)
                         packet = header_prefix + struct.pack('<I', frame_counter) + payload
                         sock.sendto(packet, (self._host, self._port))
                         
                         frame_counter = (frame_counter + 1) % 0xFFFFFFFF
                         frames_sent += samples_per_packet
                         
-                        # High precision pacing
+                        # Extremely high precision pacing
                         expected_time = start_time + (frames_sent / 48000)
                         now = time.perf_counter()
                         sleep_time = expected_time - now
@@ -216,7 +224,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         if sleep_time > 0:
                             time.sleep(sleep_time)
                         elif sleep_time < -0.05:
-                            # We're lagging, reset start_time to current to avoid catch-up burst
+                            # If we fall behind, adjust start_time to current reality
                             start_time = now - (frames_sent / 48000)
                 
                 _LOGGER.debug("Finished VBAN stream: %d packets sent", frame_counter)

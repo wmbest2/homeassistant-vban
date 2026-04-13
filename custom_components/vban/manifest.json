@@ -6,7 +6,8 @@
   "codeowners": ["@wmbest2"],
   "config_flow": true,
   "iot_class": "local_push",
-  "version": "0.9.11",
+  "version": "0.9.12",
+
 
   "requirements": ["aiovban==1.0.3", "miniaudio>=1.59"]
 }
