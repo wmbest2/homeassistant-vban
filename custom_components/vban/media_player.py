@@ -30,6 +30,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, CONF_HOST, CONF_PORT, CONF_MEDIA_STREAM, DEFAULT_PORT, DEFAULT_MEDIA_STREAM
 from . import VBANConfigEntry
@@ -78,9 +79,14 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._stream_task: asyncio.Task | None = None
         self._vban_stream: BufferedVBANOutgoingStream | None = None
         
-        # Thread safety
+        # Thread safety & State
         self._stop_event = threading.Event()
         self._stream_lock = threading.Lock()
+        
+        # Playback tracking
+        self._media_duration: float | None = None
+        self._media_position: float | None = None
+        self._media_position_updated_at: dt_util.datetime | None = None
 
         # Link to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
@@ -93,6 +99,21 @@ class VBANMediaPlayer(MediaPlayerEntity):
     def state(self) -> MediaPlayerState:
         """Return the state of the player."""
         return self._state
+
+    @property
+    def media_duration(self) -> float | None:
+        """Duration of currently playing media in seconds."""
+        return self._media_duration
+
+    @property
+    def media_position(self) -> float | None:
+        """Position of currently playing media in seconds."""
+        return self._media_position
+
+    @property
+    def media_position_updated_at(self) -> dt_util.datetime | None:
+        """When was the position of the current playing media valid."""
+        return self._media_position_updated_at
 
     async def async_browse_media(
         self,
@@ -118,27 +139,21 @@ class VBANMediaPlayer(MediaPlayerEntity):
         media_url = async_process_play_media_url(self.hass, media_url)
 
         # 1. Signal any existing thread to stop
-        self._stop_event.set()
+        await self.async_media_stop()
         
-        # 2. Cancel the previous async task (the coordinator task)
-        if self._stream_task:
-            self._stream_task.cancel()
-            try:
-                await self._stream_task
-            except asyncio.CancelledError:
-                pass
-            self._stream_task = None
-
-        # 3. Reset state for new playback
+        # 2. Reset state for new playback
         self._state = MediaPlayerState.PLAYING
         self._stop_event.clear()
+        self._media_duration = None
+        self._media_position = 0
+        self._media_position_updated_at = dt_util.utcnow()
         self.async_write_ha_state()
         
-        # 4. Start new playback task
+        # 3. Start new playback task
         self._stream_task = asyncio.create_task(self._async_stream_media(media_url))
 
-    async def async_stop(self) -> None:
-        """HA stop service calls this."""
+    async def async_media_stop(self) -> None:
+        """Stop playback."""
         self._stop_event.set()
         if self._stream_task:
             self._stream_task.cancel()
@@ -149,6 +164,8 @@ class VBANMediaPlayer(MediaPlayerEntity):
             self._stream_task = None
         
         self._state = MediaPlayerState.IDLE
+        self._media_position = None
+        self._media_duration = None
         self.async_write_ha_state()
 
     async def _async_stream_media(self, media_url: str) -> None:
@@ -159,7 +176,6 @@ class VBANMediaPlayer(MediaPlayerEntity):
         try:
             # 1. Download
             if media_url.startswith(("http://", "https://")):
-                # Run download in executor to avoid blocking
                 def download():
                     try:
                         with urllib.request.urlopen(media_url) as response:
@@ -176,7 +192,17 @@ class VBANMediaPlayer(MediaPlayerEntity):
             else:
                 stream_source = media_url
 
-            # 2. Setup Persistent Stream
+            # 2. Metadata Discovery (Duration)
+            def get_info():
+                try:
+                    with miniaudio.File(stream_source) as f:
+                        return f.duration
+                except Exception:
+                    return None
+            
+            self._media_duration = await loop.run_in_executor(None, get_info)
+
+            # 3. Setup Persistent Stream
             if not self._vban_stream:
                 device = self._entry.runtime_data.remote.device
                 self._vban_stream = BufferedVBANOutgoingStream(
@@ -187,11 +213,10 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 )
                 await self._vban_stream.connect(self._host, self._port)
 
-            # 3. Decoding and Streaming Worker
+            # 4. Decoding and Streaming Worker
             def worker():
-                # Ensure only one worker thread is active at a time
                 if not self._stream_lock.acquire(timeout=5.0):
-                    _LOGGER.warning("Could not acquire stream lock, another thread is stuck")
+                    _LOGGER.warning("Could not acquire stream lock")
                     return
 
                 try:
@@ -206,8 +231,9 @@ class VBANMediaPlayer(MediaPlayerEntity):
                     samples_per_packet = 256
                     bytes_per_packet = samples_per_packet * 2 * 2
                     buffer = b""
-                    frames_sent = 0
+                    total_samples_sent = 0
                     start_time = time.perf_counter()
+                    last_ha_update = 0
 
                     for chunk in stream:
                         if self._stop_event.is_set():
@@ -233,20 +259,26 @@ class VBANMediaPlayer(MediaPlayerEntity):
                                 body=BytesBody(payload)
                             )
                             
-                            # Use new thread-safe method in aiovban 1.0.7
                             self._vban_stream.send_packet_threadsafe(packet, loop)
 
-                            frames_sent += samples_per_packet
+                            total_samples_sent += samples_per_packet
                             
                             # High-precision pacing
                             now = time.perf_counter()
-                            expected_time = start_time + (frames_sent / 48000)
+                            expected_time = start_time + (total_samples_sent / 48000)
                             sleep_time = expected_time - now
                             
                             if sleep_time > 0:
                                 time.sleep(sleep_time)
                             elif sleep_time < -0.1:
-                                start_time = now - (frames_sent / 48000)
+                                start_time = now - (total_samples_sent / 48000)
+                            
+                            # Update HA position every second
+                            if now - last_ha_update > 1.0:
+                                self._media_position = total_samples_sent / 48000
+                                self._media_position_updated_at = dt_util.utcnow()
+                                self.hass.add_job(self.async_write_ha_state)
+                                last_ha_update = now
                                 
                 except Exception:
                     _LOGGER.exception("Error in VBAN worker thread")
@@ -257,23 +289,22 @@ class VBANMediaPlayer(MediaPlayerEntity):
             await loop.run_in_executor(None, worker)
 
         except asyncio.CancelledError:
-            self._stop_event.set() # Ensure thread knows to stop
+            self._stop_event.set()
         except Exception:
             _LOGGER.exception("Error in VBAN media player task")
         finally:
-            # Cleanup
             if temp_file and os.path.exists(temp_file):
                 try: os.remove(temp_file)
                 except: pass
             
-            # Transition back to IDLE if we weren't superseded
             if not self._stop_event.is_set():
                 self._state = MediaPlayerState.IDLE
+                self._media_position = None
                 self.hass.add_job(self.async_write_ha_state)
 
     async def will_remove_from_hass(self) -> None:
         """Cleanup when entity is removed."""
-        self._stop_event.set()
+        await self.async_media_stop()
         if self._vban_stream and self._vban_stream.send_task:
             self._vban_stream.send_task.cancel()
         await super().will_remove_from_hass()
