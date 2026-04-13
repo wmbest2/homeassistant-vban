@@ -7,6 +7,7 @@ import os
 import tempfile
 import urllib.request
 import threading
+import time
 from typing import Any
 
 import miniaudio
@@ -75,6 +76,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._state = MediaPlayerState.IDLE
         self._stream_task: asyncio.Task | None = None
         self._stop_event = threading.Event()
+        self._vban_stream: BufferedVBANOutgoingStream | None = None
 
         # Device Info links it to the main VBAN device
         data = entry.runtime_data.remote.device.connected_application_data
@@ -129,13 +131,18 @@ class VBANMediaPlayer(MediaPlayerEntity):
                 pass
             self._stream_task = None
         
+        if self._vban_stream:
+            # We don't necessarily want to cancel the send task every time, 
+            # but we should clear the buffer if possible. 
+            # In aiovban 1.0.6, we'll just let it finish or be replaced next time.
+            pass
+
         self._state = MediaPlayerState.IDLE
         self.async_write_ha_state()
 
     async def _async_stream_media(self, media_url: str) -> None:
         """Asynchronous task to stream media using aiovban BufferedStream."""
         temp_file = None
-        vban_stream: BufferedVBANOutgoingStream | None = None
         
         try:
             # Resolve URL to local file if needed
@@ -152,15 +159,16 @@ class VBANMediaPlayer(MediaPlayerEntity):
             else:
                 stream_source = media_url
 
-            # Setup aiovban buffered stream
-            device = self._entry.runtime_data.remote.device
-            vban_stream = BufferedVBANOutgoingStream(
-                name=self._stream_name,
-                _client=device._client,
-                buffer_size=200, # Large buffer for stability
-                back_pressure_strategy=BackPressureStrategy.BLOCK
-            )
-            await vban_stream.connect(self._host, self._port)
+            # Setup or reuse aiovban buffered stream
+            if not self._vban_stream:
+                device = self._entry.runtime_data.remote.device
+                self._vban_stream = BufferedVBANOutgoingStream(
+                    name=self._stream_name,
+                    _client=device._client,
+                    buffer_size=500, # Large buffer for stability
+                    back_pressure_strategy=BackPressureStrategy.BLOCK
+                )
+                await self._vban_stream.connect(self._host, self._port)
 
             # Define constants for our VBAN format
             SAMPLE_RATE = 48000
@@ -171,7 +179,6 @@ class VBANMediaPlayer(MediaPlayerEntity):
             _LOGGER.debug("Starting VBAN buffered stream to %s:%s", self._host, self._port)
 
             # Use miniaudio to decode the file/stream
-            # We run the decoding loop in a thread to keep the event loop free
             loop = asyncio.get_running_loop()
             
             def decode_and_queue():
@@ -185,7 +192,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
                     
                     buffer = b""
                     frames_sent = 0
-                    start_time = asyncio.get_event_loop().time()
+                    start_time = time.perf_counter()
 
                     for chunk in stream:
                         if self._stop_event.is_set():
@@ -212,15 +219,17 @@ class VBANMediaPlayer(MediaPlayerEntity):
                             )
                             
                             # Queue packet for sending
-                            if not vban_stream.send_packet_nowait(packet, loop=loop):
-                                # Buffer full, small yield
+                            # send_packet_nowait returns True if added to queue
+                            if not self._vban_stream.send_packet_nowait(packet, loop=loop):
+                                # Buffer might be full, though with BLOCK strategy this shouldn't happen 
+                                # but we're in a thread so we yield
                                 time.sleep(0.001)
                                 continue
 
                             frames_sent += SAMPLES_PER_PACKET
                             
-                            # High-precision pacing
-                            now = asyncio.get_event_loop().time()
+                            # High-precision pacing in the thread
+                            now = time.perf_counter()
                             expected_time = start_time + (frames_sent / SAMPLE_RATE)
                             sleep_time = expected_time - now
                             
@@ -248,7 +257,3 @@ class VBANMediaPlayer(MediaPlayerEntity):
             if temp_file and os.path.exists(temp_file):
                 try: os.remove(temp_file)
                 except: pass
-            
-            # Clean up aiovban stream if it has a close method or tasks
-            if vban_stream and hasattr(vban_stream, "send_task") and vban_stream.send_task:
-                vban_stream.send_task.cancel()
