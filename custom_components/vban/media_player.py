@@ -180,6 +180,8 @@ class VBANMediaPlayer(MediaPlayerEntity):
             
             _LOGGER.debug("Starting VBAN stream to %s:%s", self._host, self._port)
             
+            # Use DecodedGenerator for more control over chunking
+            # This ensures miniaudio resamples to exactly what we want
             stream = miniaudio.stream_file(
                 stream_source,
                 output_format=miniaudio.SampleFormat.SIGNED16,
@@ -191,23 +193,28 @@ class VBANMediaPlayer(MediaPlayerEntity):
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             
             try:
-                # Pre-buffer: load some data before starting
+                # Pre-buffer delay
                 time.sleep(1.0)
                 start_time = time.perf_counter()
                 frames_sent = 0
-                chunk_size = samples_per_packet * 2 * 2 # 2 channels * 2 bytes
                 
+                # We need exactly 256 frames per packet
+                # each frame is 2 channels * 2 bytes = 4 bytes
+                bytes_per_packet = samples_per_packet * 4
+                
+                buffer = b""
                 for chunk in stream:
                     if self._stop_event.is_set():
                         break
                     
-                    for i in range(0, len(chunk), chunk_size):
+                    buffer += chunk
+                    
+                    while len(buffer) >= bytes_per_packet:
                         if self._stop_event.is_set():
                             break
                             
-                        payload = chunk[i:i+chunk_size]
-                        if len(payload) < chunk_size:
-                            payload = payload.ljust(chunk_size, b'\x00')
+                        payload = buffer[:bytes_per_packet]
+                        buffer = buffer[bytes_per_packet:]
                         
                         # Byte 24-27: Frame counter (Little Endian)
                         packet = header_prefix + struct.pack('<I', frame_counter) + payload
@@ -223,7 +230,7 @@ class VBANMediaPlayer(MediaPlayerEntity):
                         
                         if sleep_time > 0:
                             time.sleep(sleep_time)
-                        elif sleep_time < -0.05:
+                        elif sleep_time < -0.1:
                             # If we fall behind, adjust start_time to current reality
                             start_time = now - (frames_sent / 48000)
                 
