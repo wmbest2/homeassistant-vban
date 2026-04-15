@@ -19,8 +19,9 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.target import async_extract_referenced_entity_ids, TargetSelection
 
 from aiovban.asyncio import AsyncVBANClient, VoicemeeterRemote
+from aiovban.asyncio.streams import VBANChatStream
 
-from .const import DOMAIN, CONF_COMMAND_STREAM, DEFAULT_PORT, DEFAULT_COMMAND_STREAM
+from .const import DOMAIN, CONF_COMMAND_STREAM, CONF_CHAT_STREAM, DEFAULT_PORT, DEFAULT_COMMAND_STREAM, DEFAULT_CHAT_STREAM
 from .coordinator import VBANUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.TEXT,
     Platform.MEDIA_PLAYER,
+    Platform.NOTIFY,
 ]
 
 # Shared client state across all entries
@@ -45,6 +47,7 @@ class VBANRuntimeData:
     """Data for a VBAN config entry."""
     remote: VoicemeeterRemote
     coordinator: VBANUpdateCoordinator
+    chat: VBANChatStream
     unsub_watchdog: Callable[[], None]
 
 type VBANConfigEntry = ConfigEntry[VBANRuntimeData]
@@ -54,6 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool
     host: str = entry.data[CONF_HOST]
     port: int = entry.options.get(CONF_PORT, entry.data.get(CONF_PORT, DEFAULT_PORT))
     stream: str = entry.options.get(CONF_COMMAND_STREAM, entry.data.get(CONF_COMMAND_STREAM, DEFAULT_COMMAND_STREAM))
+    chat_stream_name: str = entry.options.get(CONF_CHAT_STREAM, entry.data.get(CONF_CHAT_STREAM, DEFAULT_CHAT_STREAM))
     listen_port: int = DEFAULT_PORT 
 
     _LOGGER.debug("Initializing VBAN integration for %s:%s", host, port)
@@ -77,6 +81,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool
     device = await client.register_device(host, port)
     remote = VoicemeeterRemote(device, stream)
     await remote.start()
+
+    # Initialize Chat Stream
+    chat = await device.chat_stream(chat_stream_name)
     
     # Trigger a ping to get hardware/host info
     await client.send_ping(host, port)
@@ -111,6 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VBANConfigEntry) -> bool
     entry.runtime_data = VBANRuntimeData(
         remote=remote,
         coordinator=coordinator,
+        chat=chat,
         unsub_watchdog=unsub_watchdog,
     )
 

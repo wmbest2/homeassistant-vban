@@ -22,6 +22,7 @@ def mock_voicemeeter_remote():
         remote.device._streams = {}
         remote.device.connected_application_data = MagicMock()
         remote.device.connected_application_data.host_name = "VM-HOST"
+        remote.device.chat_stream = AsyncMock()
         remote.type = VoicemeeterType.POTATO
         remote.version = "3.0.4.2"
         remote.online = True

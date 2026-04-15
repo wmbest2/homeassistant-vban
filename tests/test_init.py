@@ -1,5 +1,5 @@
 """Test VBAN VoiceMeeter init."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 
 from homeassistant.core import HomeAssistant
@@ -16,6 +16,7 @@ async def test_setup_unload_entry(hass: HomeAssistant, mock_vban_client, mock_vo
     mock_device = MagicMock()
     mock_device.address = "1.1.1.1"
     mock_device._streams = {}
+    mock_device.chat_stream = AsyncMock()
     mock_vban_client.register_device.return_value = mock_device
     
     # Setup mock remote

@@ -63,3 +63,45 @@ async def test_numbers(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_r
         "number", "set_value", {"entity_id": "number.strip_1_mic_gain", "value": -5.5}, blocking=True
     )
     mock_strip.set_gain.assert_called_once_with(-5.5)
+
+async def test_advanced_numbers_disabled(hass: HomeAssistant, mock_vban_client, mock_voicemeeter_remote) -> None:
+    """Test advanced numbers are disabled by default."""
+    mock_strip = MagicMock()
+    mock_strip.index = 0
+    mock_strip.label = "Mic"
+    mock_strip.gain = 0.0
+    mock_strip.compressor = 0.0
+    mock_strip.gate = 0.0
+    mock_strip.denoiser = 0.0
+    
+    mock_voicemeeter_remote.strips = [mock_strip]
+    mock_voicemeeter_remote.buses = []
+    mock_voicemeeter_remote._all_strips = [mock_strip]
+    mock_voicemeeter_remote._all_buses = []
+    mock_voicemeeter_remote.type = VoicemeeterType.VOICEMEETER
+
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "1.1.1.1"},
+        entry_id="test_entry",
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch("custom_components.vban.AsyncVBANClient", return_value=mock_vban_client), \
+         patch("custom_components.vban.VoicemeeterRemote", return_value=mock_voicemeeter_remote):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    
+    # Compressor should be disabled
+    entry = ent_reg.async_get("number.strip_1_mic_compressor")
+    assert entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION
+    
+    # Gate should be disabled
+    entry = ent_reg.async_get("number.strip_1_mic_gate")
+    assert entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION
+
+    # Denoiser should be disabled
+    entry = ent_reg.async_get("number.strip_1_mic_denoiser")
+    assert entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION

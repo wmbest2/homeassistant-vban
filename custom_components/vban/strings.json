@@ -36,6 +36,12 @@
       "solo": {
         "name": "Solo"
       },
+      "eq": {
+        "name": "EQ"
+      },
+      "mc": {
+        "name": "MC"
+      },
       "bus_routing": {
         "name": "Route to {bus}"
       }
@@ -43,6 +49,15 @@
     "number": {
       "gain": {
         "name": "Gain"
+      },
+      "compressor": {
+        "name": "Compressor"
+      },
+      "gate": {
+        "name": "Gate"
+      },
+      "denoiser": {
+        "name": "Denoiser"
       }
     },
     "text": {
@@ -53,6 +68,11 @@
     "media_player": {
       "vban_media": {
         "name": "VBAN Media ({stream})"
+      }
+    },
+    "notify": {
+      "chat": {
+        "name": "Chat"
       }
     }
   },

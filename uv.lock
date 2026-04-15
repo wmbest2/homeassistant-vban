@@ -913,14 +913,14 @@ wheels = [
 
 [[package]]
 name = "aiovban"
-version = "1.0.3"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "textual" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ad/ac/937a6ceec67c71ae72f183267b6ad2e0da5716697be9fa0d4def95a566d9/aiovban-1.0.3.tar.gz", hash = "sha256:4410bd6171ac966fb861d5f93ec9724277397634c5aa5f13381701fcf7ad664e", size = 23797, upload-time = "2026-04-07T18:15:59.499Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e9/41/a47ab8ef2c8e5f8c048ed43e1911a98fdb77a0bd4f071b752aef1af58f65/aiovban-1.1.0.tar.gz", hash = "sha256:7a3d668680a4d7adb276ece4dbf6b9774ea0a2911db65df85cebafb4e3650e07", size = 31496, upload-time = "2026-04-15T16:13:13.694Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/66/1d/e9742a4211ca927cd9791443879578ca08b39e2ae5de2b8fad9e6a7d53ef/aiovban-1.0.3-py3-none-any.whl", hash = "sha256:eb58214b0271c4546d40273fd79e35498416f3788bf91b2cce4d0b76c1c16663", size = 34110, upload-time = "2026-04-07T18:16:00.294Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/3e/017e03b085200dca885a30359be57a3e4564b8d6eab603d5b8d84c04dc75/aiovban-1.1.0-py3-none-any.whl", hash = "sha256:f6e71d68f2f5843f501a62153648bc86cf217f6bde63e86ec2e6bfddd9cfe249", size = 43790, upload-time = "2026-04-15T16:13:12.33Z" },
 ]
 
 [[package]]
@@ -3839,7 +3839,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiovban", specifier = "==1.0.3" },
+    { name = "aiovban", specifier = "==1.1.0" },
     { name = "homeassistant" },
 ]
 
