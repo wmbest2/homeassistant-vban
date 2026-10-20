@@ -143,14 +143,18 @@ class VBANMediaPlayer(MediaPlayerEntity):
         
         # 2. Reset state for new playback
         self._state = MediaPlayerState.PLAYING
-        self._stop_event.clear()
+        # Fresh event per playback so a lingering old worker can never be
+        # "un-stopped" by the new playback clearing a shared event.
+        self._stop_event = threading.Event()
         self._media_duration = None
         self._media_position = 0
         self._media_position_updated_at = dt_util.utcnow()
         self.async_write_ha_state()
         
         # 3. Start new playback task
-        self._stream_task = asyncio.create_task(self._async_stream_media(media_url))
+        self._stream_task = asyncio.create_task(
+            self._async_stream_media(media_url, self._stop_event)
+        )
 
     async def async_media_stop(self) -> None:
         """Stop playback."""
@@ -168,9 +172,12 @@ class VBANMediaPlayer(MediaPlayerEntity):
         self._media_duration = None
         self.async_write_ha_state()
 
-    async def _async_stream_media(self, media_url: str) -> None:
+    async def _async_stream_media(
+        self, media_url: str, stop_event: threading.Event
+    ) -> None:
         """Asynchronous task to manage media streaming."""
         temp_file = None
+        worker_future: asyncio.Future | None = None
         loop = asyncio.get_running_loop()
         
         try:
@@ -236,12 +243,12 @@ class VBANMediaPlayer(MediaPlayerEntity):
                     last_ha_update = 0
 
                     for chunk in stream:
-                        if self._stop_event.is_set():
+                        if stop_event.is_set():
                             break
                         
                         buffer += chunk
                         while len(buffer) >= bytes_per_packet:
-                            if self._stop_event.is_set():
+                            if stop_event.is_set():
                                 break
                                 
                             payload = buffer[:bytes_per_packet]
@@ -286,18 +293,27 @@ class VBANMediaPlayer(MediaPlayerEntity):
                     self._stream_lock.release()
                     _LOGGER.debug("VBAN worker thread finished")
 
-            await loop.run_in_executor(None, worker)
+            worker_future = loop.run_in_executor(None, worker)
+            # Shield so cancelling this task doesn't just abandon the thread.
+            await asyncio.shield(worker_future)
 
         except asyncio.CancelledError:
-            self._stop_event.set()
+            stop_event.set()
         except Exception:
             _LOGGER.exception("Error in VBAN media player task")
         finally:
+            # Executor threads can't be cancelled: wait for the worker to
+            # observe stop_event and exit before the next playback starts
+            # (and before its temp file is removed).
+            if worker_future is not None and not worker_future.done():
+                stop_event.set()
+                await asyncio.wait([worker_future], timeout=5.0)
+
             if temp_file and os.path.exists(temp_file):
                 try: os.remove(temp_file)
                 except: pass
             
-            if not self._stop_event.is_set():
+            if not stop_event.is_set():
                 self._state = MediaPlayerState.IDLE
                 self._media_position = None
                 self.hass.add_job(self.async_write_ha_state)
